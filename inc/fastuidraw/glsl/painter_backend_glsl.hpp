@@ -207,6 +207,30 @@ namespace fastuidraw
         };
 
       /*!
+       * Enumeration to specify how triangles are to be clipped
+       * against the clipping equations represented by \ref
+       * PainterClipEquations.
+       */
+      enum clipping_type_t
+        {
+          /*!
+           * The clipping is done through gl_ClipDistance[]
+           * in the generated vertex shader.
+           */
+          clipping_via_clip_distance,
+
+          /*!
+           * Clipping is performed via discard
+           */
+          clipping_via_discard,
+
+          /*!
+           * Clipping is performed via compute shading
+           */
+          clipping_via_compute_shader,
+        };
+
+      /*!
        * \brief
        * A params gives parameters how to contruct
        * a PainterBackendGLSL.
@@ -246,17 +270,19 @@ namespace fastuidraw
         swap(ConfigurationGLSL &obj);
 
         /*!
-         * If true, use HW clip planes (embodied by gl_ClipDistance).
+         * Specifies how clipping against the clip equations
+         * of a \ref PainterClipEquations are to be performed by
+         * the shaders.
          */
-        bool
-        use_hw_clip_planes(void) const;
+        enum clipping_type_t
+        clipping_type(void) const;
 
         /*!
-         * Set the value returned by use_hw_clip_planes(void) const.
+         * Set the value returned by clipping_type(void) const.
          * Default value is true.
          */
         ConfigurationGLSL&
-        use_hw_clip_planes(bool);
+        clipping_type(enum clipping_type_t);
 
         /*!
          * Sets how the default stroke shaders perform anti-aliasing.
@@ -915,8 +941,7 @@ namespace fastuidraw
       add_fragment_shader_util(const ShaderSource &src);
 
       /*!
-       * Add the uber-vertex and fragment shaders to given
-       * ShaderSource values.
+       * Add the uber-vertex and fragment shaders to given ShaderSource values.
        * \param out_vertex ShaderSource to which to add uber-vertex shader
        * \param out_fragment ShaderSource to which to add uber-fragment shader
        * \param contruct_params specifies how to construct the uber-shaders.
@@ -935,6 +960,47 @@ namespace fastuidraw
                        const UberShaderParams &contruct_params,
                        const ItemShaderFilter *item_shader_filter = nullptr,
                        c_string discard_macro_value = "discard");
+
+      /*!
+       * Add the vertex uber-shader to a given ShaderSource.
+       * \param out_vertex ShaderSource to which to add uber-vertex shader
+       * \param contruct_params specifies how to construct the uber-shaders.
+       * \param item_shader_filter pointer to ItemShaderFilter to use to filter
+       *                           which shader to place into the uber-shader.
+       *                           A value of nullptr indicates to add all item
+       *                           shaders to the uber-shader.
+       */
+      void
+      construct_vertex_shader(ShaderSource &out_vertex,
+                              const UberShaderParams &contruct_params,
+                              const ItemShaderFilter *item_shader_filter = nullptr);
+
+      /*!
+       * Add the fragment uber-shader to a given ShaderSource.
+       * \param out_fragment ShaderSource to which to add uber-fragment shader
+       * \param contruct_params specifies how to construct the uber-shaders.
+       * \param item_shader_filter pointer to ItemShaderFilter to use to filter
+       *                           which shader to place into the uber-shader.
+       *                           A value of nullptr indicates to add all item
+       *                           shaders to the uber-shader.
+       * \param discard_macro_value macro-value definintion for the macro
+       *                            FASTUIDRAW_DISCARD. PainterItemShaderGLSL
+       *                            fragment sources use FASTUIDRAW_DISCARD
+       *                            instead of discard.
+       */
+      void
+      construct_fragment_shader(ShaderSource &out_fragment,
+                                const UberShaderParams &contruct_params,
+                                const ItemShaderFilter *item_shader_filter = nullptr,
+                                c_string discard_macro_value = "discard");
+      
+      /*!
+       * Construct a compute shader that performs clipping on input data
+       * from a vertex shader.
+       */
+      void
+      contruct_clipping_compute_shader(ShaderSource &out_compute,
+                                       const UberShaderParams &contruct_params);
 
       /*!
        * Fill a buffer to hold the values for the uniforms

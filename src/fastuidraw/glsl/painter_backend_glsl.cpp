@@ -63,11 +63,11 @@ namespace
   {
   public:
     ConfigurationGLSLPrivate(void):
-      m_use_hw_clip_planes(true),
+      m_clipping_type(fastuidraw::glsl::PainterBackendGLSL::clipping_via_clip_distance),
       m_default_stroke_shader_aa_type(fastuidraw::PainterStrokeShader::draws_solid_then_fuzz)
     {}
 
-    bool m_use_hw_clip_planes;
+    enum fastuidraw::glsl::PainterBackendGLSL::clipping_type_t m_clipping_type;
     enum fastuidraw::PainterStrokeShader::type_t m_default_stroke_shader_aa_type;
     fastuidraw::reference_counted_ptr<const fastuidraw::PainterDraw::Action> m_default_stroke_shader_aa_pass1_action;
     fastuidraw::reference_counted_ptr<const fastuidraw::PainterDraw::Action> m_default_stroke_shader_aa_pass2_action;
@@ -151,6 +151,12 @@ namespace
   class PainterBackendGLSLPrivate
   {
   public:
+    enum uber_shader_type
+      {
+        uber_vertex_shader,
+        uber_fragment_shader,
+      };
+    
     explicit
     PainterBackendGLSLPrivate(fastuidraw::glsl::PainterBackendGLSL *p,
                               const fastuidraw::glsl::PainterBackendGLSL::ConfigurationGLSL &config,
@@ -158,8 +164,8 @@ namespace
     ~PainterBackendGLSLPrivate();
 
     void
-    construct_shader(fastuidraw::glsl::ShaderSource &out_vertex,
-                     fastuidraw::glsl::ShaderSource &out_fragment,
+    construct_shader(fastuidraw::glsl::ShaderSource &out_shader,
+                     enum uber_shader_type shader_type,
                      const fastuidraw::glsl::PainterBackendGLSL::UberShaderParams &contruct_params,
                      const fastuidraw::glsl::PainterBackendGLSL::ItemShaderFilter *item_shader_filter,
                      fastuidraw::c_string discard_macro_value);
@@ -285,6 +291,8 @@ void
 PainterBackendGLSLPrivate::
 ready_main_varyings(void)
 {
+  using namespace fastuidraw::glsl;
+
   m_main_varyings_header_only
     .add_uint_varying("fastuidraw_header_varying")
     .add_float_varying("fastuidraw_brush_p_x")
@@ -297,21 +305,6 @@ ready_main_varyings(void)
     .add_uint_varying("fastuidraw_blend_shader_data_location")
     .add_float_varying("fastuidraw_brush_p_x")
     .add_float_varying("fastuidraw_brush_p_y");
-
-  if (!m_config.use_hw_clip_planes())
-    {
-      m_main_varyings_header_only
-        .add_float_varying("fastuidraw_clip_plane0")
-        .add_float_varying("fastuidraw_clip_plane1")
-        .add_float_varying("fastuidraw_clip_plane2")
-        .add_float_varying("fastuidraw_clip_plane3");
-
-      m_main_varyings_shaders_and_shader_datas
-        .add_float_varying("fastuidraw_clip_plane0")
-        .add_float_varying("fastuidraw_clip_plane1")
-        .add_float_varying("fastuidraw_clip_plane2")
-        .add_float_varying("fastuidraw_clip_plane3");
-    }
 }
 
 void
@@ -757,8 +750,8 @@ declare_shader_uniforms(const fastuidraw::glsl::PainterBackendGLSL::UberShaderPa
 
 void
 PainterBackendGLSLPrivate::
-construct_shader(fastuidraw::glsl::ShaderSource &vert,
-                 fastuidraw::glsl::ShaderSource &frag,
+construct_shader(fastuidraw::glsl::ShaderSource &out_shader,
+                 enum uber_shader_type shader_type,
                  const fastuidraw::glsl::PainterBackendGLSL::UberShaderParams &params,
                  const fastuidraw::glsl::PainterBackendGLSL::ItemShaderFilter *item_shader_filter,
                  fastuidraw::c_string discard_macro_value)
@@ -768,9 +761,9 @@ construct_shader(fastuidraw::glsl::ShaderSource &vert,
   using namespace fastuidraw::glsl::detail;
 
   std::string varying_layout_macro, binding_layout_macro;
-  std::string declare_shader_varyings, declare_main_varyings, declare_brush_varyings;
-  std::string declare_vertex_shader_ins;
-  std::string declare_uniforms;
+  DeclareVaryings declare_varyings_builder;
+  std::string declare_vertex_shader_ins, declare_uniforms;
+  std::string declare_varyings, declare_vert_varyings, declare_frag_varyings;
   const varying_list *main_varyings;
   DeclareVaryingsStringDatum main_varying_datum, brush_varying_datum, shader_varying_datum;
   const PainterBackendGLSL::BindingPoints &binding_params(params.binding_points());
@@ -840,7 +833,6 @@ construct_shader(fastuidraw::glsl::ShaderSource &vert,
       binding_layout_macro = ostr.str();
     }
 
-  unsigned int varying_slot(0);
   if (params.unpack_header_and_brush_in_frag_shader())
     {
       main_varyings = &m_main_varyings_header_only;
@@ -848,84 +840,83 @@ construct_shader(fastuidraw::glsl::ShaderSource &vert,
   else
     {
       main_varyings = &m_main_varyings_shaders_and_shader_datas;
-      declare_brush_varyings = declare_varyings_string("_brush",
-                                                       m_brush_varyings.uints().size(),
-                                                       m_brush_varyings.ints().size(),
-                                                       m_brush_varyings.float_counts(),
-                                                       &varying_slot,
-                                                       &brush_varying_datum);
+      declare_varyings_builder.add_varyings("_brush",
+                                            m_brush_varyings.uints().size(),
+                                            m_brush_varyings.ints().size(),
+                                            m_brush_varyings.float_counts(),
+                                            &brush_varying_datum);
     }
+  declare_varyings_builder.add_varyings("_shader",
+                                        m_number_uint_varyings,
+                                        m_number_int_varyings,
+                                        m_number_float_varyings,
+                                        &shader_varying_datum);
 
-  declare_main_varyings = declare_varyings_string("_main",
-                                                  main_varyings->uints().size(),
-                                                  main_varyings->ints().size(),
-                                                  main_varyings->float_counts(),
-                                                  &varying_slot,
-                                                  &main_varying_datum);
+  declare_varyings_builder.add_varyings("_main",
+                                        main_varyings->uints().size(),
+                                        main_varyings->ints().size(),
+                                        main_varyings->float_counts(),
+                                        &main_varying_datum);
+  
+  enum PainterBackendGLSL::clipping_type_t ct(m_config.clipping_type());
+  bool include_clip_varyings_vert(ct != PainterBackendGLSL::clipping_via_clip_distance);
+  bool include_clip_varyings_frag(ct == PainterBackendGLSL::clipping_via_discard);
 
-  declare_shader_varyings = declare_varyings_string("_shader",
-                                                    m_number_uint_varyings,
-                                                    m_number_int_varyings,
-                                                    m_number_float_varyings,
-                                                    &varying_slot,
-                                                    &shader_varying_datum);
-
+  declare_vert_varyings = declare_varyings_builder.declare_varyings("out", include_clip_varyings_vert);
+  declare_frag_varyings = declare_varyings_builder.declare_varyings("in", include_clip_varyings_frag);
   declare_uniforms = declare_shader_uniforms(params);
 
   if (params.unpack_header_and_brush_in_frag_shader())
     {
-      vert.add_macro("FASTUIDRAW_PAINTER_UNPACK_AT_FRAGMENT_SHADER");
-      frag.add_macro("FASTUIDRAW_PAINTER_UNPACK_AT_FRAGMENT_SHADER");
+      out_shader.add_macro("FASTUIDRAW_PAINTER_UNPACK_AT_FRAGMENT_SHADER");
     }
 
   if (params.negate_normalized_y_coordinate())
     {
-      vert.add_macro("FASTUIDRAW_PAINTER_NEGATE_POSITION_Y_COORDINATE");
-      frag.add_macro("FASTUIDRAW_PAINTER_NEGATE_POSITION_Y_COORDINATE");
+      out_shader.add_macro("FASTUIDRAW_PAINTER_NEGATE_POSITION_Y_COORDINATE");
     }
 
   if (params.z_coordinate_convention() == PainterBackendGLSL::z_minus_1_to_1)
     {
-      vert.add_macro("FASTUIDRAW_PAINTER_NORMALIZED_Z_MINUS_1_TO_1");
-      frag.add_macro("FASTUIDRAW_PAINTER_NORMALIZED_Z_MINUS_1_TO_1");
+      out_shader.add_macro("FASTUIDRAW_PAINTER_NORMALIZED_Z_MINUS_1_TO_1");
     }
   else
     {
-      vert.add_macro("FASTUIDRAW_PAINTER_NORMALIZED_0_TO_1");
-      frag.add_macro("FASTUIDRAW_PAINTER_NORMALIZED_0_TO_1");
+      out_shader.add_macro("FASTUIDRAW_PAINTER_NORMALIZED_0_TO_1");
     }
 
-  if (m_config.use_hw_clip_planes())
+  if (shader_type == uber_vertex_shader
+      && m_config.clipping_type() == PainterBackendGLSL::clipping_via_clip_distance)
     {
-      vert.add_macro("FASTUIDRAW_PAINTER_USE_HW_CLIP_PLANES");
-      frag.add_macro("FASTUIDRAW_PAINTER_USE_HW_CLIP_PLANES");
+      out_shader.add_macro("FASTUIDRAW_PAINTER_GL_CLIP_DISTANCE_CLIPS");
+    }
+  else if (shader_type == uber_fragment_shader
+           && m_config.clipping_type() == PainterBackendGLSL::clipping_via_discard)
+    {
+      out_shader.add_macro("FASTUIDRAW_PAINTER_DISCARD_CLIPS");
     }
 
   if (m_p->configuration_base().supports_bindless_texturing())
     {
-      vert.add_macro("FASTUIDRAW_SUPPORT_BINDLESS_TEXTURE");
-      frag.add_macro("FASTUIDRAW_SUPPORT_BINDLESS_TEXTURE");
+      out_shader.add_macro("FASTUIDRAW_SUPPORT_BINDLESS_TEXTURE");
     }
 
   if (params.use_uvec2_for_bindless_handle())
     {
-      vert.add_macro("FASTUIDRAW_BINDLESS_HANDLE_UVEC2");
-      frag.add_macro("FASTUIDRAW_BINDLESS_HANDLE_UVEC2");
+      out_shader.add_macro("FASTUIDRAW_BINDLESS_HANDLE_UVEC2");
     }
 
   switch(params.colorstop_atlas_backing())
     {
     case PainterBackendGLSL::colorstop_texture_1d_array:
       {
-        vert.add_macro("FASTUIDRAW_PAINTER_COLORSTOP_ATLAS_1D_ARRAY");
-        frag.add_macro("FASTUIDRAW_PAINTER_COLORSTOP_ATLAS_1D_ARRAY");
+        out_shader.add_macro("FASTUIDRAW_PAINTER_COLORSTOP_ATLAS_1D_ARRAY");
       }
     break;
 
     case PainterBackendGLSL::colorstop_texture_2d_array:
       {
-        vert.add_macro("FASTUIDRAW_PAINTER_COLORSTOP_ATLAS_2D_ARRAY");
-        frag.add_macro("FASTUIDRAW_PAINTER_COLORSTOP_ATLAS_2D_ARRAY");
+        out_shader.add_macro("FASTUIDRAW_PAINTER_COLORSTOP_ATLAS_2D_ARRAY");
       }
     break;
 
@@ -941,11 +932,7 @@ construct_shader(fastuidraw::glsl::ShaderSource &vert,
         FASTUIDRAWassert(alignment == 4);
         FASTUIDRAWunused(alignment);
 
-        vert
-          .add_macro("FASTUIDRAW_PAINTER_USE_DATA_UBO")
-          .add_macro("FASTUIDRAW_PAINTER_DATA_STORE_ARRAY_SIZE", params.data_blocks_per_store_buffer());
-
-        frag
+        out_shader
           .add_macro("FASTUIDRAW_PAINTER_USE_DATA_UBO")
           .add_macro("FASTUIDRAW_PAINTER_DATA_STORE_ARRAY_SIZE", params.data_blocks_per_store_buffer());
       }
@@ -953,8 +940,7 @@ construct_shader(fastuidraw::glsl::ShaderSource &vert,
 
     case PainterBackendGLSL::data_store_tbo:
       {
-        vert.add_macro("FASTUIDRAW_PAINTER_USE_DATA_TBO");
-        frag.add_macro("FASTUIDRAW_PAINTER_USE_DATA_TBO");
+        out_shader.add_macro("FASTUIDRAW_PAINTER_USE_DATA_TBO");
       }
       break;
 
@@ -964,20 +950,14 @@ construct_shader(fastuidraw::glsl::ShaderSource &vert,
 
   if (!params.have_float_glyph_texture_atlas())
     {
-      vert.add_macro("FASTUIDRAW_PAINTER_EMULATE_GLYPH_TEXEL_STORE_FLOAT");
-      frag.add_macro("FASTUIDRAW_PAINTER_EMULATE_GLYPH_TEXEL_STORE_FLOAT");
+      out_shader.add_macro("FASTUIDRAW_PAINTER_EMULATE_GLYPH_TEXEL_STORE_FLOAT");
     }
 
   switch(params.glyph_geometry_backing())
     {
     case PainterBackendGLSL::glyph_geometry_texture_array:
       {
-        vert
-          .add_macro("FASTUIDRAW_GLYPH_DATA_STORE_TEXTURE_ARRAY")
-          .add_macro("FASTUIDRAW_GLYPH_GEOMETRY_WIDTH_LOG2", params.glyph_geometry_backing_log2_dims().x())
-          .add_macro("FASTUIDRAW_GLYPH_GEOMETRY_HEIGHT_LOG2", params.glyph_geometry_backing_log2_dims().y());
-
-        frag
+        out_shader
           .add_macro("FASTUIDRAW_GLYPH_DATA_STORE_TEXTURE_ARRAY")
           .add_macro("FASTUIDRAW_GLYPH_GEOMETRY_WIDTH_LOG2", params.glyph_geometry_backing_log2_dims().x())
           .add_macro("FASTUIDRAW_GLYPH_GEOMETRY_HEIGHT_LOG2", params.glyph_geometry_backing_log2_dims().y());
@@ -986,8 +966,7 @@ construct_shader(fastuidraw::glsl::ShaderSource &vert,
 
     case PainterBackendGLSL::glyph_geometry_tbo:
       {
-        vert.add_macro("FASTUIDRAW_GLYPH_DATA_STORE_TEXTURE_BUFFER");
-        frag.add_macro("FASTUIDRAW_GLYPH_DATA_STORE_TEXTURE_BUFFER");
+        out_shader.add_macro("FASTUIDRAW_GLYPH_DATA_STORE_TEXTURE_BUFFER");
       }
       break;
     }
@@ -995,78 +974,33 @@ construct_shader(fastuidraw::glsl::ShaderSource &vert,
   switch(params.provide_auxiliary_image_buffer())
     {
     case PainterBackendGLSL::auxiliary_buffer_atomic:
-      frag.add_macro("FASTUIDRAW_PAINTER_AUXILIARY_BUFFER_ATOMIC");
-      frag.add_macro("FASTUIDRAW_PAINTER_HAVE_AUXILIARY_BUFFER");
+      out_shader
+        .add_macro("FASTUIDRAW_PAINTER_AUXILIARY_BUFFER_ATOMIC")
+        .add_macro("FASTUIDRAW_PAINTER_HAVE_AUXILIARY_BUFFER");
       break;
 
     case PainterBackendGLSL::auxiliary_buffer_interlock:
-      frag.add_macro("FASTUIDRAW_PAINTER_AUXILIARY_BUFFER_INTERLOCK");
-      frag.add_macro("FASTUIDRAW_PAINTER_HAVE_AUXILIARY_BUFFER");
+      out_shader
+        .add_macro("FASTUIDRAW_PAINTER_AUXILIARY_BUFFER_INTERLOCK")
+        .add_macro("FASTUIDRAW_PAINTER_HAVE_AUXILIARY_BUFFER");
       break;
       break;
 
     case PainterBackendGLSL::auxiliary_buffer_interlock_main_only:
-      frag.add_macro("FASTUIDRAW_PAINTER_AUXILIARY_BUFFER_INTERLOCK_MAIN_ONLY");
-      frag.add_macro("FASTUIDRAW_PAINTER_HAVE_AUXILIARY_BUFFER");
+      out_shader
+        .add_macro("FASTUIDRAW_PAINTER_AUXILIARY_BUFFER_INTERLOCK_MAIN_ONLY")
+        .add_macro("FASTUIDRAW_PAINTER_HAVE_AUXILIARY_BUFFER");
       break;
 
     case PainterBackendGLSL::auxiliary_buffer_framebuffer_fetch:
-      frag.add_macro("FASTUIDRAW_PAINTER_AUXILIARY_BUFFER_FRAMEBUFFER_FETCH");
-      frag.add_macro("FASTUIDRAW_PAINTER_HAVE_AUXILIARY_BUFFER");
+      out_shader
+        .add_macro("FASTUIDRAW_PAINTER_AUXILIARY_BUFFER_FRAMEBUFFER_FETCH")
+        .add_macro("FASTUIDRAW_PAINTER_HAVE_AUXILIARY_BUFFER");
       break;
 
     default:
       break;
     }
-
-  vert
-    .add_source(m_constant_code)
-    .add_source(varying_layout_macro.c_str(), ShaderSource::from_string)
-    .add_source(binding_layout_macro.c_str(), ShaderSource::from_string)
-    .add_macro("FASTUIDRAW_COLORSTOP_ATLAS_BINDING", binding_params.colorstop_atlas())
-    .add_macro("FASTUIDRAW_COLOR_TILE_LINEAR_BINDING", binding_params.image_atlas_color_tiles_linear())
-    .add_macro("FASTUIDRAW_COLOR_TILE_NEAREST_BINDING", binding_params.image_atlas_color_tiles_nearest())
-    .add_macro("FASTUIDRAW_INDEX_TILE_BINDING", binding_params.image_atlas_index_tiles())
-    .add_macro("FASTUIDRAW_GLYPH_TEXEL_ATLAS_UINT_BINDING", binding_params.glyph_atlas_texel_store_uint())
-    .add_macro("FASTUIDRAW_GLYPH_TEXEL_ATLAS_FLOAT_BINDING", binding_params.glyph_atlas_texel_store_float())
-    .add_macro("FASTUIDRAW_GLYPH_GEOMETRY_STORE_BINDING", binding_params.glyph_atlas_geometry_store())
-    .add_macro("FASTUIDRAW_PAINTER_STORE_TBO_BINDING", binding_params.data_store_buffer_tbo())
-    .add_macro("FASTUIDRAW_PAINTER_STORE_UBO_BINDING", binding_params.data_store_buffer_ubo())
-    .add_macro("FASTUIDRAW_PAINTER_AUXILIARY_BUFFER_BINDING", binding_params.auxiliary_image_buffer())
-    .add_macro("fastuidraw_varying", "out")
-    .add_source(declare_vertex_shader_ins.c_str(), ShaderSource::from_string)
-    .add_source(declare_brush_varyings.c_str(), ShaderSource::from_string)
-    .add_source(declare_main_varyings.c_str(), ShaderSource::from_string)
-    .add_source(declare_shader_varyings.c_str(), ShaderSource::from_string);
-
-  stream_alias_varyings("_main", vert, *main_varyings, true, main_varying_datum);
-  if (params.unpack_header_and_brush_in_frag_shader())
-    {
-      /* we need to declare the values named in m_brush_varyings
-       */
-      stream_varyings_as_local_variables(vert, m_brush_varyings);
-    }
-  else
-    {
-      stream_alias_varyings("_brush", vert, m_brush_varyings, true, brush_varying_datum);
-    }
-
-  vert
-    .add_source(declare_uniforms.c_str(), ShaderSource::from_string)
-    .add_source("fastuidraw_painter_uniforms.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_brush_macros.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_types.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_brush_types.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_forward_declares.vert.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_brush_unpack_forward_declares.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_brush_unpack.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_brush.vert.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_main.vert.glsl.resource_string", ShaderSource::from_resource)
-    .add_source(m_vert_shader_utils);
-
-  stream_unpack_code(vert);
-  stream_uber_vert_shader(params.vert_shader_use_switch(), vert, item_shaders,
-                          shader_varying_datum);
 
   c_string shader_blend_macro;
   switch(m_blend_type)
@@ -1088,11 +1022,10 @@ construct_shader(fastuidraw::glsl::ShaderSource &vert,
       FASTUIDRAWassert(!"Invalid blend_type");
     }
 
-  frag
+  out_shader
     .add_source(m_constant_code)
     .add_source(varying_layout_macro.c_str(), ShaderSource::from_string)
     .add_source(binding_layout_macro.c_str(), ShaderSource::from_string)
-    .add_macro("FASTUIDRAW_DISCARD", discard_macro_value)
     .add_macro(shader_blend_macro)
     .add_macro("FASTUIDRAW_COLORSTOP_ATLAS_BINDING", binding_params.colorstop_atlas())
     .add_macro("FASTUIDRAW_COLOR_TILE_LINEAR_BINDING", binding_params.image_atlas_color_tiles_linear())
@@ -1103,51 +1036,93 @@ construct_shader(fastuidraw::glsl::ShaderSource &vert,
     .add_macro("FASTUIDRAW_GLYPH_GEOMETRY_STORE_BINDING", binding_params.glyph_atlas_geometry_store())
     .add_macro("FASTUIDRAW_PAINTER_STORE_TBO_BINDING", binding_params.data_store_buffer_tbo())
     .add_macro("FASTUIDRAW_PAINTER_STORE_UBO_BINDING", binding_params.data_store_buffer_ubo())
-    .add_macro("FASTUIDRAW_PAINTER_AUXILIARY_BUFFER_BINDING", binding_params.auxiliary_image_buffer())
-    .add_macro("fastuidraw_varying", "in")
-    .add_source(declare_brush_varyings.c_str(), ShaderSource::from_string)
-    .add_source(declare_main_varyings.c_str(), ShaderSource::from_string)
-    .add_source(declare_shader_varyings.c_str(), ShaderSource::from_string);
-
-  stream_alias_varyings("_main", frag, *main_varyings, true, main_varying_datum);
-  if (params.unpack_header_and_brush_in_frag_shader())
+    .add_macro("FASTUIDRAW_PAINTER_AUXILIARY_BUFFER_BINDING", binding_params.auxiliary_image_buffer());
+  
+  if (shader_type == uber_vertex_shader)
     {
-      /* we need to declare the values named in m_brush_varyings
-       */
-      stream_varyings_as_local_variables(frag, m_brush_varyings);
+      ShaderSource &vert(out_shader);
+      
+      vert
+        .add_source(declare_vertex_shader_ins.c_str(), ShaderSource::from_string)
+        .add_source(declare_vert_varyings.c_str(), ShaderSource::from_string);
+
+      stream_alias_varyings("_main", vert, *main_varyings, true, main_varying_datum);
+      if (params.unpack_header_and_brush_in_frag_shader())
+        {
+          /* we need to declare the values named in m_brush_varyings */
+          stream_varyings_as_local_variables(vert, m_brush_varyings);
+        }
+      else
+        {
+          stream_alias_varyings("_brush", vert, m_brush_varyings, true, brush_varying_datum);
+        }
+
+      vert
+        .add_source(declare_uniforms.c_str(), ShaderSource::from_string)
+        .add_source("fastuidraw_painter_uniforms.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_brush_macros.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_types.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_brush_types.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_forward_declares.vert.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_brush_unpack_forward_declares.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_brush_unpack.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_brush.vert.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_main.vert.glsl.resource_string", ShaderSource::from_resource)
+        .add_source(m_vert_shader_utils);
+
+      stream_unpack_code(vert);
+      stream_uber_vert_shader(params.vert_shader_use_switch(), vert, item_shaders,
+                              shader_varying_datum);
     }
   else
     {
-      stream_alias_varyings("_brush", frag, m_brush_varyings, true, brush_varying_datum);
-    }
+      ShaderSource &frag(out_shader);
 
-  frag
-    .add_source(declare_uniforms.c_str(), ShaderSource::from_string)
-    .add_source("fastuidraw_painter_uniforms.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_auxiliary_image_buffer.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_brush_macros.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_types.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_brush_types.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_forward_declares.frag.glsl.resource_string", ShaderSource::from_resource);
-
-  if (params.unpack_header_and_brush_in_frag_shader())
-    {
       frag
-        .add_source("fastuidraw_painter_brush_unpack_forward_declares.glsl.resource_string", ShaderSource::from_resource)
-        .add_source("fastuidraw_painter_brush_unpack.glsl.resource_string", ShaderSource::from_resource);
+        .add_macro("FASTUIDRAW_DISCARD", discard_macro_value)
+        .add_source(declare_frag_varyings.c_str(), ShaderSource::from_string);
+
+      stream_alias_varyings("_main", frag, *main_varyings, true, main_varying_datum);
+      if (params.unpack_header_and_brush_in_frag_shader())
+        {
+          /* we need to declare the values named in m_brush_varyings
+           */
+          stream_varyings_as_local_variables(frag, m_brush_varyings);
+        }
+      else
+        {
+          stream_alias_varyings("_brush", frag, m_brush_varyings, true, brush_varying_datum);
+        }
+
+      frag
+        .add_source(declare_uniforms.c_str(), ShaderSource::from_string)
+        .add_source("fastuidraw_painter_uniforms.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_auxiliary_image_buffer.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_brush_macros.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_types.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_brush_types.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_forward_declares.frag.glsl.resource_string", ShaderSource::from_resource);
+      
+      if (params.unpack_header_and_brush_in_frag_shader())
+        {
+          frag
+            .add_source("fastuidraw_painter_brush_unpack_forward_declares.glsl.resource_string", ShaderSource::from_resource)
+            .add_source("fastuidraw_painter_brush_unpack.glsl.resource_string", ShaderSource::from_resource);
+        }
+
+      frag
+        .add_source("fastuidraw_painter_brush.frag.glsl.resource_string", ShaderSource::from_resource)
+        .add_source("fastuidraw_painter_main.frag.glsl.resource_string", ShaderSource::from_resource)
+        .add_source(m_frag_shader_utils);
+
+      stream_unpack_code(frag);
+      stream_uber_frag_shader(params.frag_shader_use_switch(), frag, item_shaders,
+                              shader_varying_datum);
+      stream_uber_blend_shader(params.blend_shader_use_switch(), frag,
+                               make_c_array(m_blend_shaders[m_blend_type].m_shaders),
+                               m_blend_type);
+      
     }
-
-  frag
-    .add_source("fastuidraw_painter_brush.frag.glsl.resource_string", ShaderSource::from_resource)
-    .add_source("fastuidraw_painter_main.frag.glsl.resource_string", ShaderSource::from_resource)
-    .add_source(m_frag_shader_utils);
-
-  stream_unpack_code(frag);
-  stream_uber_frag_shader(params.frag_shader_use_switch(), frag, item_shaders,
-                          shader_varying_datum);
-  stream_uber_blend_shader(params.blend_shader_use_switch(), frag,
-                           make_c_array(m_blend_shaders[m_blend_type].m_shaders),
-                           m_blend_type);
 }
 
 /////////////////////////////////////////////////////////////////
@@ -1178,7 +1153,7 @@ fastuidraw::glsl::PainterBackendGLSL::ConfigurationGLSL::
 assign_swap_implement(fastuidraw::glsl::PainterBackendGLSL::ConfigurationGLSL)
 
 setget_implement(fastuidraw::glsl::PainterBackendGLSL::ConfigurationGLSL, ConfigurationGLSLPrivate,
-                 bool, use_hw_clip_planes)
+                 enum fastuidraw::glsl::PainterBackendGLSL::clipping_type_t, clipping_type)
 setget_implement(fastuidraw::glsl::PainterBackendGLSL::ConfigurationGLSL, ConfigurationGLSLPrivate,
                  enum fastuidraw::PainterStrokeShader::type_t, default_stroke_shader_aa_type)
 setget_implement(fastuidraw::glsl::PainterBackendGLSL::ConfigurationGLSL, ConfigurationGLSLPrivate,
@@ -1321,7 +1296,9 @@ PainterBackendGLSL(reference_counted_ptr<GlyphAtlas> glyph_atlas,
 {
   m_d = FASTUIDRAWnew PainterBackendGLSLPrivate(this, config_glsl,
                                                 config_base.blend_type());
-  set_hints().clipping_via_hw_clip_planes(config_glsl.use_hw_clip_planes());
+
+  set_hints()
+    .clipping_via_hw_clip_planes(config_glsl.clipping_type() != clipping_via_discard);
 }
 
 fastuidraw::glsl::PainterBackendGLSL::
@@ -1487,8 +1464,38 @@ construct_shader(ShaderSource &out_vertex,
 {
   PainterBackendGLSLPrivate *d;
   d = static_cast<PainterBackendGLSLPrivate*>(m_d);
-  d->construct_shader(out_vertex, out_fragment, construct_params,
-                      item_shader_filter, discard_macro_value);
+
+  d->construct_shader(out_vertex, PainterBackendGLSLPrivate::uber_vertex_shader,
+                      construct_params, item_shader_filter, nullptr);
+
+  d->construct_shader(out_fragment, PainterBackendGLSLPrivate::uber_fragment_shader,
+                      construct_params, item_shader_filter, discard_macro_value);
+}
+
+void
+fastuidraw::glsl::PainterBackendGLSL::
+construct_vertex_shader(ShaderSource &out_vertex,
+                        const UberShaderParams &contruct_params,
+                        const ItemShaderFilter *item_shader_filter)
+{
+  PainterBackendGLSLPrivate *d;
+  d = static_cast<PainterBackendGLSLPrivate*>(m_d);
+
+  d->construct_shader(out_vertex, PainterBackendGLSLPrivate::uber_vertex_shader,
+                      contruct_params, item_shader_filter, nullptr);
+}
+
+void
+fastuidraw::glsl::PainterBackendGLSL::
+construct_fragment_shader(ShaderSource &out_fragment,
+                          const UberShaderParams &contruct_params,
+                          const ItemShaderFilter *item_shader_filter,
+                          c_string discard_macro_value)
+{
+  PainterBackendGLSLPrivate *d;
+  d = static_cast<PainterBackendGLSLPrivate*>(m_d);
+  d->construct_shader(out_fragment, PainterBackendGLSLPrivate::uber_fragment_shader,
+                      contruct_params, item_shader_filter, discard_macro_value);
 }
 
 uint32_t
