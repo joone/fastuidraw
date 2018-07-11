@@ -272,6 +272,7 @@ namespace
       m_data_tbo(0)
     {}
 
+    /* for running the uber-vertex shader */
     GLuint m_vao;
     GLuint m_attribute_bo, m_header_bo, m_index_bo, m_data_bo;
     GLuint m_data_tbo;
@@ -1583,8 +1584,6 @@ compute_glsl_config(const fastuidraw::gl::PainterBackendGL::ConfigurationGL &par
         .default_stroke_shader_aa_type(PainterStrokeShader::draws_solid_then_fuzz);
     }
 
-  return_value.clipping_type(compute_clipping_type(params.clipping_type(), ctx));
-
   if (return_value.default_stroke_shader_aa_type() == PainterStrokeShader::cover_then_draw
       && aux_type == glsl::PainterBackendGLSL::auxiliary_buffer_atomic)
     {
@@ -1662,7 +1661,8 @@ configure_backend(void)
       }
     }
 
-  m_params.clipping_type(m_p->configuration_glsl().clipping_type());
+  m_params.clipping_type(compute_clipping_type(m_params.clipping_type(),
+                                               m_ctx_properties));
   #ifdef FASTUIDRAW_GL_USE_GLES
     {
       if (m_ctx_properties.has_extension("GL_EXT_clip_cull_distance"))
@@ -1760,6 +1760,7 @@ configure_backend(void)
     }
 
   m_uber_shader_builder_params
+    .clipping_type(m_params.clipping_type())
     .assign_layout_to_vertex_shader_inputs(m_params.assign_layout_to_vertex_shader_inputs())
     .assign_layout_to_varyings(m_params.assign_layout_to_varyings())
     .assign_binding_points(m_params.assign_binding_points())
@@ -2494,7 +2495,10 @@ PainterBackendGL(const ConfigurationGL &config_gl,
                      PainterBackendGLPrivate::compute_glsl_config(config_gl),
                      PainterBackendGLPrivate::compute_base_config(config_gl, config_base))
 {
-  m_d = FASTUIDRAWnew PainterBackendGLPrivate(config_gl, this);
+  PainterBackendGLPrivate *d;
+  d = FASTUIDRAWnew PainterBackendGLPrivate(config_gl, this);
+  m_d = d;
+  set_hints().clipping_via_hw_clip_planes(d->m_params.clipping_type() != clipping_via_discard);
 }
 
 fastuidraw::gl::PainterBackendGL::

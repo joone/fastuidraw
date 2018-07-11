@@ -63,11 +63,9 @@ namespace
   {
   public:
     ConfigurationGLSLPrivate(void):
-      m_clipping_type(fastuidraw::glsl::PainterBackendGLSL::clipping_via_clip_distance),
       m_default_stroke_shader_aa_type(fastuidraw::PainterStrokeShader::draws_solid_then_fuzz)
     {}
 
-    enum fastuidraw::glsl::PainterBackendGLSL::clipping_type_t m_clipping_type;
     enum fastuidraw::PainterStrokeShader::type_t m_default_stroke_shader_aa_type;
     fastuidraw::reference_counted_ptr<const fastuidraw::PainterDraw::Action> m_default_stroke_shader_aa_pass1_action;
     fastuidraw::reference_counted_ptr<const fastuidraw::PainterDraw::Action> m_default_stroke_shader_aa_pass2_action;
@@ -107,6 +105,7 @@ namespace
   {
   public:
     UberShaderParamsPrivate(void):
+      m_clipping_type(fastuidraw::glsl::PainterBackendGLSL::clipping_via_clip_distance),
       m_z_coordinate_convention(fastuidraw::glsl::PainterBackendGLSL::z_minus_1_to_1),
       m_negate_normalized_y_coordinate(false),
       m_assign_layout_to_vertex_shader_inputs(true),
@@ -127,6 +126,7 @@ namespace
       m_use_uvec2_for_bindless_handle(true)
     {}
 
+    enum fastuidraw::glsl::PainterBackendGLSL::clipping_type_t m_clipping_type;
     enum fastuidraw::glsl::PainterBackendGLSL::z_coordinate_convention_t m_z_coordinate_convention;
     bool m_negate_normalized_y_coordinate;
     bool m_assign_layout_to_vertex_shader_inputs;
@@ -858,7 +858,7 @@ construct_shader(fastuidraw::glsl::ShaderSource &out_shader,
                                         main_varyings->float_counts(),
                                         &main_varying_datum);
   
-  enum PainterBackendGLSL::clipping_type_t ct(m_config.clipping_type());
+  enum PainterBackendGLSL::clipping_type_t ct(params.clipping_type());
   bool include_clip_varyings_vert(ct != PainterBackendGLSL::clipping_via_clip_distance);
   bool include_clip_varyings_frag(ct == PainterBackendGLSL::clipping_via_discard);
 
@@ -886,12 +886,12 @@ construct_shader(fastuidraw::glsl::ShaderSource &out_shader,
     }
 
   if (shader_type == uber_vertex_shader
-      && m_config.clipping_type() == PainterBackendGLSL::clipping_via_clip_distance)
+      && params.clipping_type() == PainterBackendGLSL::clipping_via_clip_distance)
     {
       out_shader.add_macro("FASTUIDRAW_PAINTER_GL_CLIP_DISTANCE_CLIPS");
     }
   else if (shader_type == uber_fragment_shader
-           && m_config.clipping_type() == PainterBackendGLSL::clipping_via_discard)
+           && params.clipping_type() == PainterBackendGLSL::clipping_via_discard)
     {
       out_shader.add_macro("FASTUIDRAW_PAINTER_DISCARD_CLIPS");
     }
@@ -1153,8 +1153,6 @@ fastuidraw::glsl::PainterBackendGLSL::ConfigurationGLSL::
 assign_swap_implement(fastuidraw::glsl::PainterBackendGLSL::ConfigurationGLSL)
 
 setget_implement(fastuidraw::glsl::PainterBackendGLSL::ConfigurationGLSL, ConfigurationGLSLPrivate,
-                 enum fastuidraw::glsl::PainterBackendGLSL::clipping_type_t, clipping_type)
-setget_implement(fastuidraw::glsl::PainterBackendGLSL::ConfigurationGLSL, ConfigurationGLSLPrivate,
                  enum fastuidraw::PainterStrokeShader::type_t, default_stroke_shader_aa_type)
 setget_implement(fastuidraw::glsl::PainterBackendGLSL::ConfigurationGLSL, ConfigurationGLSLPrivate,
                  const fastuidraw::reference_counted_ptr<const fastuidraw::PainterDraw::Action>&,
@@ -1241,6 +1239,8 @@ fastuidraw::glsl::PainterBackendGLSL::UberShaderParams::
 assign_swap_implement(fastuidraw::glsl::PainterBackendGLSL::UberShaderParams)
 
 setget_implement(fastuidraw::glsl::PainterBackendGLSL::UberShaderParams,
+                 UberShaderParamsPrivate, enum fastuidraw::glsl::PainterBackendGLSL::clipping_type_t, clipping_type)
+setget_implement(fastuidraw::glsl::PainterBackendGLSL::UberShaderParams,
                  UberShaderParamsPrivate, enum fastuidraw::glsl::PainterBackendGLSL::z_coordinate_convention_t, z_coordinate_convention)
 setget_implement(fastuidraw::glsl::PainterBackendGLSL::UberShaderParams,
                  UberShaderParamsPrivate, bool, negate_normalized_y_coordinate)
@@ -1296,9 +1296,6 @@ PainterBackendGLSL(reference_counted_ptr<GlyphAtlas> glyph_atlas,
 {
   m_d = FASTUIDRAWnew PainterBackendGLSLPrivate(this, config_glsl,
                                                 config_base.blend_type());
-
-  set_hints()
-    .clipping_via_hw_clip_planes(config_glsl.clipping_type() != clipping_via_discard);
 }
 
 fastuidraw::glsl::PainterBackendGLSL::

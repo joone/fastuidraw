@@ -270,21 +270,6 @@ namespace fastuidraw
         swap(ConfigurationGLSL &obj);
 
         /*!
-         * Specifies how clipping against the clip equations
-         * of a \ref PainterClipEquations are to be performed by
-         * the shaders.
-         */
-        enum clipping_type_t
-        clipping_type(void) const;
-
-        /*!
-         * Set the value returned by clipping_type(void) const.
-         * Default value is true.
-         */
-        ConfigurationGLSL&
-        clipping_type(enum clipping_type_t);
-
-        /*!
          * Sets how the default stroke shaders perform anti-aliasing.
          * If the value is \ref PainterStrokeShader::cover_then_draw, then
          * UberShaderParams::provide_auxiliary_image_buffer() must be true.
@@ -575,6 +560,21 @@ namespace fastuidraw
          */
         void
         swap(UberShaderParams &obj);
+
+        /*!
+         * Specifies how clipping against the clip equations
+         * of a \ref PainterClipEquations are to be performed by
+         * the shaders.
+         */
+        enum clipping_type_t
+        clipping_type(void) const;
+
+        /*!
+         * Set the value returned by clipping_type(void) const.
+         * Default value is clipping_via_clip_distance.
+         */
+        UberShaderParams&
+        clipping_type(enum clipping_type_t);
 
         /*!
          * Specifies the normalized device z-coordinate convention
