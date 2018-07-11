@@ -1574,14 +1574,20 @@ construct_shader(ShaderSource &out_vertex,
                  ShaderSource &out_fragment,
                  const UberShaderParams &construct_params,
                  const ItemShaderFilter *item_shader_filter,
-                 c_string discard_macro_value)
+                 c_string discard_macro_value,
+                 VaryingsOfUberShader *out_varyings)
 {
   PainterBackendGLSLPrivate *d;
+  VaryingsOfUberShaderPrivate *vd;
+
   d = static_cast<PainterBackendGLSLPrivate*>(m_d);
+  vd = (out_varyings) ?
+    static_cast<VaryingsOfUberShaderPrivate*>(out_varyings->m_d) :
+    nullptr;
 
   d->construct_shader(out_vertex, PainterBackendGLSLPrivate::uber_vertex_shader,
                       construct_params, item_shader_filter,
-                      nullptr, nullptr);
+                      nullptr, vd);
 
   d->construct_shader(out_fragment, PainterBackendGLSLPrivate::uber_fragment_shader,
                       construct_params, item_shader_filter,

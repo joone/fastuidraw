@@ -1003,13 +1003,16 @@ namespace fastuidraw
        *                            FASTUIDRAW_DISCARD. PainterItemShaderGLSL
        *                            fragment sources use FASTUIDRAW_DISCARD
        *                            instead of discard.
+       * \param out_varyings if non-NULL have the varying information of the
+       *                     uber shaders written here.
        */
       void
       construct_shader(ShaderSource &out_vertex,
                        ShaderSource &out_fragment,
                        const UberShaderParams &contruct_params,
                        const ItemShaderFilter *item_shader_filter = nullptr,
-                       c_string discard_macro_value = "discard");
+                       c_string discard_macro_value = "discard",
+                       VaryingsOfUberShader *out_varyings = nullptr);
 
       /*!
        * Add the vertex uber-shader to a given ShaderSource.
@@ -1052,7 +1055,7 @@ namespace fastuidraw
       
       /*!
        * Construct a compute shader that performs clipping on input data
-       * from a vertex shader.
+       * from a vertex shader created by construct_vertex_shader().
        */
       void
       contruct_clipping_compute_shader(ShaderSource &out_compute,
