@@ -148,6 +148,36 @@ namespace
     bool m_use_uvec2_for_bindless_handle;
   };
 
+  class VaryingsOfUberShaderPrivate:fastuidraw::noncopyable
+  {
+  public:
+    VaryingsOfUberShaderPrivate(void):
+      m_total_number_components(0)
+    {}
+
+    void
+    initialize(const fastuidraw::glsl::detail::DeclareVaryings &obj)
+    {
+      m_total_number_components = 0;
+      m_src_data = obj.varyings();
+      m_data.resize(m_src_data.size());
+      for (unsigned int i = 0, endi = m_data.size(); i < endi; ++i)
+        {
+          m_data[i].m_is_flat = m_src_data[i].m_is_flat;
+          m_data[i].m_type = m_src_data[i].m_type.c_str();
+          m_data[i].m_name = m_src_data[i].m_name.c_str();
+          m_data[i].m_qualifier = m_src_data[i].m_qualifier.c_str();
+          m_data[i].m_num_components = m_src_data[i].m_num_components;
+          m_data[i].m_slot = m_src_data[i].m_slot;
+          m_total_number_components += m_data[i].m_num_components;
+        }
+    }
+    
+    std::vector<fastuidraw::glsl::PainterBackendGLSL::VaryingsOfUberShader::Varying> m_data;
+    std::vector<fastuidraw::glsl::detail::DeclareVaryings::per_varying> m_src_data;
+    unsigned int m_total_number_components;
+  };
+
   class PainterBackendGLSLPrivate
   {
   public:
@@ -168,7 +198,8 @@ namespace
                      enum uber_shader_type shader_type,
                      const fastuidraw::glsl::PainterBackendGLSL::UberShaderParams &contruct_params,
                      const fastuidraw::glsl::PainterBackendGLSL::ItemShaderFilter *item_shader_filter,
-                     fastuidraw::c_string discard_macro_value);
+                     fastuidraw::c_string discard_macro_value,
+                     VaryingsOfUberShaderPrivate *out_varyings);
 
     void
     update_varying_size(const fastuidraw::glsl::varying_list &plist);
@@ -178,6 +209,9 @@ namespace
 
     void
     ready_main_varyings(void);
+
+    void
+    ready_clip_varyings(void);
 
     void
     ready_brush_varyings(void);
@@ -208,7 +242,7 @@ namespace
 
     fastuidraw::glsl::varying_list m_main_varyings_header_only;
     fastuidraw::glsl::varying_list m_main_varyings_shaders_and_shader_datas;
-    fastuidraw::glsl::varying_list m_brush_varyings;
+    fastuidraw::glsl::varying_list m_brush_varyings, m_clip_plane_varyings;
 
     fastuidraw::vec2 m_viewport_resolution;
     fastuidraw::vec2 m_viewport_resolution_recip;
@@ -242,6 +276,7 @@ PainterBackendGLSLPrivate(fastuidraw::glsl::PainterBackendGLSL *p,
 
   ready_main_varyings();
   ready_brush_varyings();
+  ready_clip_varyings();
 
   m_constant_code
     .add_macro("FASTUIDRAW_PAINTER_IMAGE_ATLAS_INDEX_TILE_SIZE", m_p->image_atlas()->index_tile_size())
@@ -285,6 +320,18 @@ PainterBackendGLSLPrivate(fastuidraw::glsl::PainterBackendGLSL *p,
 PainterBackendGLSLPrivate::
 ~PainterBackendGLSLPrivate()
 {
+}
+
+void
+PainterBackendGLSLPrivate::
+ready_clip_varyings(void)
+{
+  using namespace fastuidraw::glsl;
+  m_clip_plane_varyings
+    .add_float_varying("fastuidraw_clip_plane0")
+    .add_float_varying("fastuidraw_clip_plane1")
+    .add_float_varying("fastuidraw_clip_plane2")
+    .add_float_varying("fastuidraw_clip_plane3");
 }
 
 void
@@ -754,7 +801,8 @@ construct_shader(fastuidraw::glsl::ShaderSource &out_shader,
                  enum uber_shader_type shader_type,
                  const fastuidraw::glsl::PainterBackendGLSL::UberShaderParams &params,
                  const fastuidraw::glsl::PainterBackendGLSL::ItemShaderFilter *item_shader_filter,
-                 fastuidraw::c_string discard_macro_value)
+                 fastuidraw::c_string discard_macro_value,
+                 VaryingsOfUberShaderPrivate *out_varyings)
 {
   using namespace fastuidraw;
   using namespace fastuidraw::glsl;
@@ -763,9 +811,10 @@ construct_shader(fastuidraw::glsl::ShaderSource &out_shader,
   std::string varying_layout_macro, binding_layout_macro;
   DeclareVaryings declare_varyings_builder;
   std::string declare_vertex_shader_ins, declare_uniforms;
-  std::string declare_varyings, declare_vert_varyings, declare_frag_varyings;
+  std::string declare_varyings;
   const varying_list *main_varyings;
-  DeclareVaryingsStringDatum main_varying_datum, brush_varying_datum, shader_varying_datum;
+  DeclareVaryingsStringDatum main_varying_datum, brush_varying_datum;
+  DeclareVaryingsStringDatum shader_varying_datum, clip_varying_datum;
   const PainterBackendGLSL::BindingPoints &binding_params(params.binding_points());
   std::vector<reference_counted_ptr<PainterItemShaderGLSL> > work_shaders;
   c_array<const reference_counted_ptr<PainterItemShaderGLSL> > item_shaders;
@@ -859,11 +908,29 @@ construct_shader(fastuidraw::glsl::ShaderSource &out_shader,
                                         &main_varying_datum);
   
   enum PainterBackendGLSL::clipping_type_t ct(params.clipping_type());
-  bool include_clip_varyings_vert(ct != PainterBackendGLSL::clipping_via_clip_distance);
-  bool include_clip_varyings_frag(ct == PainterBackendGLSL::clipping_via_discard);
+  c_string varying_storage_qualifier;
+  bool add_fastuidraw_clip_planes;
 
-  declare_vert_varyings = declare_varyings_builder.declare_varyings("out", include_clip_varyings_vert);
-  declare_frag_varyings = declare_varyings_builder.declare_varyings("in", include_clip_varyings_frag);
+  if (shader_type == uber_vertex_shader)
+    {
+      varying_storage_qualifier = "out";
+      add_fastuidraw_clip_planes = (ct != PainterBackendGLSL::clipping_via_clip_distance);
+    }
+  else
+    {
+      varying_storage_qualifier = "in";
+      add_fastuidraw_clip_planes = (ct == PainterBackendGLSL::clipping_via_discard);
+    }
+
+  if (add_fastuidraw_clip_planes)
+    {
+      declare_varyings_builder.add_varyings("_clipping",
+                                            m_clip_plane_varyings.uints().size(),
+                                            m_clip_plane_varyings.ints().size(),
+                                            m_clip_plane_varyings.float_counts(),
+                                            &clip_varying_datum);
+    }
+  declare_varyings = declare_varyings_builder.declare_varyings(varying_storage_qualifier);
   declare_uniforms = declare_shader_uniforms(params);
 
   if (params.unpack_header_and_brush_in_frag_shader())
@@ -1044,9 +1111,14 @@ construct_shader(fastuidraw::glsl::ShaderSource &out_shader,
       
       vert
         .add_source(declare_vertex_shader_ins.c_str(), ShaderSource::from_string)
-        .add_source(declare_vert_varyings.c_str(), ShaderSource::from_string);
+        .add_source(declare_varyings.c_str(), ShaderSource::from_string);
 
       stream_alias_varyings("_main", vert, *main_varyings, true, main_varying_datum);
+      if (add_fastuidraw_clip_planes)
+        {
+          stream_alias_varyings("_clipping", vert, m_clip_plane_varyings, true, clip_varying_datum);
+        }
+
       if (params.unpack_header_and_brush_in_frag_shader())
         {
           /* we need to declare the values named in m_brush_varyings */
@@ -1080,9 +1152,14 @@ construct_shader(fastuidraw::glsl::ShaderSource &out_shader,
 
       frag
         .add_macro("FASTUIDRAW_DISCARD", discard_macro_value)
-        .add_source(declare_frag_varyings.c_str(), ShaderSource::from_string);
+        .add_source(declare_varyings.c_str(), ShaderSource::from_string);
 
       stream_alias_varyings("_main", frag, *main_varyings, true, main_varying_datum);
+      if (add_fastuidraw_clip_planes)
+        {
+          stream_alias_varyings("_clipping", frag, m_clip_plane_varyings, true, clip_varying_datum);
+        }
+
       if (params.unpack_header_and_brush_in_frag_shader())
         {
           /* we need to declare the values named in m_brush_varyings
@@ -1122,6 +1199,11 @@ construct_shader(fastuidraw::glsl::ShaderSource &out_shader,
                                make_c_array(m_blend_shaders[m_blend_type].m_shaders),
                                m_blend_type);
       
+    }
+
+  if (out_varyings)
+    {
+      out_varyings->initialize(declare_varyings_builder);
     }
 }
 
@@ -1278,6 +1360,41 @@ setget_implement(fastuidraw::glsl::PainterBackendGLSL::UberShaderParams,
                  UberShaderParamsPrivate, const fastuidraw::glsl::PainterBackendGLSL::BindingPoints&, binding_points)
 setget_implement(fastuidraw::glsl::PainterBackendGLSL::UberShaderParams,
                  UberShaderParamsPrivate, bool, use_uvec2_for_bindless_handle)
+
+////////////////////////////////////////////////
+// fastuidraw::glsl::VaryingsOfUberShader methods
+fastuidraw::glsl::PainterBackendGLSL::VaryingsOfUberShader::
+VaryingsOfUberShader(void)
+{
+  m_d = FASTUIDRAWnew VaryingsOfUberShaderPrivate();
+}
+
+fastuidraw::glsl::PainterBackendGLSL::VaryingsOfUberShader::
+~VaryingsOfUberShader()
+{
+  VaryingsOfUberShaderPrivate *d;
+  d = static_cast<VaryingsOfUberShaderPrivate*>(m_d);
+  FASTUIDRAWdelete(d);
+  m_d = nullptr;
+}
+
+unsigned int
+fastuidraw::glsl::PainterBackendGLSL::VaryingsOfUberShader::
+total_number_components(void) const
+{
+  VaryingsOfUberShaderPrivate *d;
+  d = static_cast<VaryingsOfUberShaderPrivate*>(m_d);
+  return d->m_total_number_components;
+}
+
+fastuidraw::c_array<const fastuidraw::glsl::PainterBackendGLSL::VaryingsOfUberShader::Varying>
+fastuidraw::glsl::PainterBackendGLSL::VaryingsOfUberShader::
+data(void) const
+{
+  VaryingsOfUberShaderPrivate *d;
+  d = static_cast<VaryingsOfUberShaderPrivate*>(m_d);
+  return make_c_array(d->m_data);
+}
 
 //////////////////////////////////////////////
 // fastuidraw::glsl::PainterBackendGLSL methods
@@ -1463,23 +1580,31 @@ construct_shader(ShaderSource &out_vertex,
   d = static_cast<PainterBackendGLSLPrivate*>(m_d);
 
   d->construct_shader(out_vertex, PainterBackendGLSLPrivate::uber_vertex_shader,
-                      construct_params, item_shader_filter, nullptr);
+                      construct_params, item_shader_filter,
+                      nullptr, nullptr);
 
   d->construct_shader(out_fragment, PainterBackendGLSLPrivate::uber_fragment_shader,
-                      construct_params, item_shader_filter, discard_macro_value);
+                      construct_params, item_shader_filter,
+                      discard_macro_value, nullptr);
 }
 
 void
 fastuidraw::glsl::PainterBackendGLSL::
 construct_vertex_shader(ShaderSource &out_vertex,
                         const UberShaderParams &contruct_params,
-                        const ItemShaderFilter *item_shader_filter)
+                        const ItemShaderFilter *item_shader_filter,
+                        VaryingsOfUberShader *out_varyings)
 {
   PainterBackendGLSLPrivate *d;
+  VaryingsOfUberShaderPrivate *vd;
+
   d = static_cast<PainterBackendGLSLPrivate*>(m_d);
+  vd = (out_varyings) ?
+    static_cast<VaryingsOfUberShaderPrivate*>(out_varyings->m_d) :
+    nullptr;
 
   d->construct_shader(out_vertex, PainterBackendGLSLPrivate::uber_vertex_shader,
-                      contruct_params, item_shader_filter, nullptr);
+                      contruct_params, item_shader_filter, nullptr, vd);
 }
 
 void
@@ -1487,12 +1612,19 @@ fastuidraw::glsl::PainterBackendGLSL::
 construct_fragment_shader(ShaderSource &out_fragment,
                           const UberShaderParams &contruct_params,
                           const ItemShaderFilter *item_shader_filter,
-                          c_string discard_macro_value)
+                          c_string discard_macro_value,
+                          VaryingsOfUberShader *out_varyings)
 {
   PainterBackendGLSLPrivate *d;
+  VaryingsOfUberShaderPrivate *vd;
+
   d = static_cast<PainterBackendGLSLPrivate*>(m_d);
+  vd = (out_varyings) ?
+    static_cast<VaryingsOfUberShaderPrivate*>(out_varyings->m_d) :
+    nullptr;
+
   d->construct_shader(out_fragment, PainterBackendGLSLPrivate::uber_fragment_shader,
-                      contruct_params, item_shader_filter, discard_macro_value);
+                      contruct_params, item_shader_filter, discard_macro_value, vd);
 }
 
 uint32_t

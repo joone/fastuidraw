@@ -17,6 +17,7 @@
  */
 
 #include <sstream>
+#include <iomanip>
 
 #include "uber_shader_builder.hpp"
 #include "../../private/util_private.hpp"
@@ -515,6 +516,7 @@ add_varyings_impl_type(c_string suffix, unsigned int cnt,
     {
       V.m_name = make_name(name, suffix, i);
       V.m_slot = m_varyings.size();
+      V.m_num_components = 4;
       m_varyings.push_back(V);
     }
 
@@ -523,6 +525,7 @@ add_varyings_impl_type(c_string suffix, unsigned int cnt,
       V.m_name = make_name(name, suffix, num_vec4);
       V.m_slot = m_varyings.size();
       V.m_type = types[remaining - 1];
+      V.m_num_components = remaining;
       m_varyings.push_back(V);
     }
 }
@@ -530,7 +533,6 @@ add_varyings_impl_type(c_string suffix, unsigned int cnt,
 std::string
 DeclareVaryings::
 declare_varyings(c_string varying_qualifier,
-                 bool add_clip_varyings,
                  c_string interface_name,
                  c_string instance_name) const
 {
@@ -551,12 +553,6 @@ declare_varyings(c_string varying_qualifier,
       str << "FASTUIDRAW_LAYOUT_VARYING(" << V.m_slot << ") "
           << V.m_qualifier << " " << vp << " " << V.m_type
           << " " << V.m_name << ";\n";
-    }
-
-  if (add_clip_varyings)
-    {
-      str << "FASTUIDRAW_LAYOUT_VARYING(" << m_varyings.size()
-          << ") " << vp << " vec4 fastuidraw_clip_planes;\n"; 
     }
 
   if (interface_name)

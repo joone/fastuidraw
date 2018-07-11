@@ -903,6 +903,56 @@ namespace fastuidraw
       };
 
       /*!
+       * \brief
+       * A VaryingsOfUberShader provides the lsit of varyings
+       * of an uber-shader
+       */
+      class VaryingsOfUberShader:fastuidraw::noncopyable
+      {
+      public:
+        /*!
+         * \brief
+         * Description of a single varying.
+         */
+        class Varying
+        {
+        public:
+          bool m_is_flat;
+          c_string m_name;
+          c_string m_type;
+          c_string m_qualifier;
+          unsigned int m_num_components;
+          unsigned int m_slot;
+        };
+
+        /*!
+         * Ctor.
+         */
+        VaryingsOfUberShader(void);
+
+        ~VaryingsOfUberShader();
+
+        /*!
+         * Returns the total number of -compontents-.
+         */
+        unsigned int
+        total_number_components(void) const;
+
+        /*!
+         * Returns the list of varyings of an uber-shader.
+         * The pointer remains valid as long as this
+         * VaryingsOfUberShader object is not modified
+         * or destroyed.
+         */
+        c_array<const Varying>
+        data(void) const;
+
+      private:
+        friend class PainterBackendGLSL;
+        void *m_d;
+      };
+
+      /*!
        * Ctor.
        * \param glyph_atlas GlyphAtlas for glyphs drawn by the PainterBackend
        * \param image_atlas ImageAtlas for images drawn by the PainterBackend
@@ -969,11 +1019,14 @@ namespace fastuidraw
        *                           which shader to place into the uber-shader.
        *                           A value of nullptr indicates to add all item
        *                           shaders to the uber-shader.
+       * \param out_varyings if non-NULL have the varying information of the
+       *                     uber-vertex shader written here.
        */
       void
       construct_vertex_shader(ShaderSource &out_vertex,
                               const UberShaderParams &contruct_params,
-                              const ItemShaderFilter *item_shader_filter = nullptr);
+                              const ItemShaderFilter *item_shader_filter = nullptr,
+                              VaryingsOfUberShader *out_varyings = nullptr);
 
       /*!
        * Add the fragment uber-shader to a given ShaderSource.
@@ -987,12 +1040,15 @@ namespace fastuidraw
        *                            FASTUIDRAW_DISCARD. PainterItemShaderGLSL
        *                            fragment sources use FASTUIDRAW_DISCARD
        *                            instead of discard.
+       * \param out_varyings if non-NULL have the varying information of the
+       *                     uber-vertex shader written here.
        */
       void
       construct_fragment_shader(ShaderSource &out_fragment,
                                 const UberShaderParams &contruct_params,
                                 const ItemShaderFilter *item_shader_filter = nullptr,
-                                c_string discard_macro_value = "discard");
+                                c_string discard_macro_value = "discard",
+                                VaryingsOfUberShader *out_varyings = nullptr);
       
       /*!
        * Construct a compute shader that performs clipping on input data

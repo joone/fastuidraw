@@ -47,6 +47,7 @@ public:
     std::string m_type;
     std::string m_name;
     std::string m_qualifier;
+    unsigned int m_num_components;
     unsigned int m_slot;
   };
 
@@ -59,7 +60,6 @@ public:
 
   std::string
   declare_varyings(c_string varying_qualifier,
-                   bool add_clip_varyings,
                    c_string interface_name = nullptr,
                    c_string instance_name = nullptr) const;
 
