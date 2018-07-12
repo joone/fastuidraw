@@ -77,26 +77,26 @@ namespace
   {
   public:
     BindingPointsPrivate(void):
-      m_colorstop_atlas(0),
-      m_image_atlas_color_tiles_nearest(1),
-      m_image_atlas_color_tiles_linear(2),
-      m_image_atlas_index_tiles(3),
-      m_glyph_atlas_texel_store_uint(4),
-      m_glyph_atlas_texel_store_float(5),
-      m_glyph_atlas_geometry_store(6),
-      m_data_store_buffer_tbo(7),
-      m_data_store_buffer_ubo(0),
-      m_auxiliary_image_buffer(0),
-      m_uniforms_ubo(1)
+      m_glyph_atlas_geometry_store(0),      //texture or GL_SHADER_STORAGE_BUFFER
+      m_glyph_atlas_texel_store_uint(1),    //texture
+      m_glyph_atlas_texel_store_float(2),   //texture
+      m_colorstop_atlas(3),                 //texture
+      m_image_atlas_color_tiles_nearest(4), //texture
+      m_image_atlas_color_tiles_linear(5),  //texture
+      m_image_atlas_index_tiles(6),         //texture
+      m_data_store_buffer_tbo(7),           //texture
+      m_data_store_buffer_ubo(0),           //GL_UNIFORM_BUFFER
+      m_auxiliary_image_buffer(0),          //image
+      m_uniforms_ubo(1)                     //GL_UNIFORM_BUFFER
     {}
 
+    unsigned int m_glyph_atlas_geometry_store;
+    unsigned int m_glyph_atlas_texel_store_uint;
+    unsigned int m_glyph_atlas_texel_store_float;
     unsigned int m_colorstop_atlas;
     unsigned int m_image_atlas_color_tiles_nearest;
     unsigned int m_image_atlas_color_tiles_linear;
     unsigned int m_image_atlas_index_tiles;
-    unsigned int m_glyph_atlas_texel_store_uint;
-    unsigned int m_glyph_atlas_texel_store_float;
-    unsigned int m_glyph_atlas_geometry_store;
     unsigned int m_data_store_buffer_tbo;
     unsigned int m_data_store_buffer_ubo;
     unsigned int m_auxiliary_image_buffer;
@@ -988,6 +988,13 @@ construct_shader(fastuidraw::glsl::ShaderSource &vert,
       {
         vert.add_macro("FASTUIDRAW_GLYPH_DATA_STORE_TEXTURE_BUFFER");
         frag.add_macro("FASTUIDRAW_GLYPH_DATA_STORE_TEXTURE_BUFFER");
+      }
+      break;
+
+    case PainterBackendGLSL::glyph_geometry_ssbo:
+      {
+        vert.add_macro("FASTUIDRAW_GLYPH_DATA_STORE_SSBO");
+        frag.add_macro("FASTUIDRAW_GLYPH_DATA_STORE_SSBO");
       }
       break;
     }

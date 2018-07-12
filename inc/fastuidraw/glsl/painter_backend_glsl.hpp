@@ -76,6 +76,11 @@ namespace fastuidraw
            * Use a sampler2DArray to access the data
            */
           glyph_geometry_texture_array,
+
+          /*!
+           * Use a buffer block to access the data
+           */
+          glyph_geometry_ssbo,
         };
 
       /*!
@@ -436,6 +441,7 @@ namespace fastuidraw
          * of UberShaderParams::glyph_geometry_backing():
          * - sampler2DArray if value is glyph_geometry_texture_array
          * - samplerBuffer if value is glyph_geometry_tbo
+         * - buffer if value is glyph_geometry_ssbo
          */
         unsigned int
         glyph_atlas_geometry_store(void) const;
