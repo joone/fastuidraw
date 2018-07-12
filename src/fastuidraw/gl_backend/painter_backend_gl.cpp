@@ -1958,8 +1958,7 @@ configure_source_front_matter(void)
 
       if (using_glsl43)
         {
-          m_front_matter_vert.specify_version("430");
-          m_front_matter_frag.specify_version("430");
+          version = "430";
         }
       else if (using_glsl42)
         {
