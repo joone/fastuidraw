@@ -164,7 +164,7 @@ namespace fastuidraw
            * allows for cover then draw methods to be performed
            * WITHOUT any draw-breaks. The buffer is realized as
            * an "r8" image2D in the shader source. A backend will
-           * need to define the the functions (or macros) in their
+           * need to define the functions (or macros) in their
            * GLSL preamble:
            *  - fastuidraw_begin_interlock() which is called before access
            *  - fastuidraw_end_interlock() which is called after access
@@ -212,6 +212,30 @@ namespace fastuidraw
         };
 
       /*!
+       * Enumeration to specify how triangles are to be clipped
+       * against the clipping equations represented by \ref
+       * PainterClipEquations.
+       */
+      enum clipping_type_t
+        {
+          /*!
+           * The clipping is done through gl_ClipDistance[]
+           * in the generated vertex shader.
+           */
+          clipping_via_clip_distance,
+
+          /*!
+           * Clipping is performed via discard
+           */
+          clipping_via_discard,
+
+          /*!
+           * Clipping is performed via compute shading
+           */
+          clipping_via_compute_shader,
+        };
+
+      /*!
        * \brief
        * A params gives parameters how to contruct
        * a PainterBackendGLSL.
@@ -249,19 +273,6 @@ namespace fastuidraw
          */
         void
         swap(ConfigurationGLSL &obj);
-
-        /*!
-         * If true, use HW clip planes (embodied by gl_ClipDistance).
-         */
-        bool
-        use_hw_clip_planes(void) const;
-
-        /*!
-         * Set the value returned by use_hw_clip_planes(void) const.
-         * Default value is true.
-         */
-        ConfigurationGLSL&
-        use_hw_clip_planes(bool);
 
         /*!
          * Sets how the default stroke shaders perform anti-aliasing.
@@ -555,6 +566,21 @@ namespace fastuidraw
          */
         void
         swap(UberShaderParams &obj);
+
+        /*!
+         * Specifies how clipping against the clip equations
+         * of a \ref PainterClipEquations are to be performed by
+         * the shaders.
+         */
+        enum clipping_type_t
+        clipping_type(void) const;
+
+        /*!
+         * Set the value returned by clipping_type(void) const.
+         * Default value is clipping_via_clip_distance.
+         */
+        UberShaderParams&
+        clipping_type(enum clipping_type_t);
 
         /*!
          * Specifies the normalized device z-coordinate convention
@@ -883,6 +909,56 @@ namespace fastuidraw
       };
 
       /*!
+       * \brief
+       * A VaryingsOfUberShader provides the lsit of varyings
+       * of an uber-shader
+       */
+      class VaryingsOfUberShader:fastuidraw::noncopyable
+      {
+      public:
+        /*!
+         * \brief
+         * Description of a single varying.
+         */
+        class Varying
+        {
+        public:
+          bool m_is_flat;
+          c_string m_name;
+          c_string m_type;
+          c_string m_qualifier;
+          unsigned int m_num_components;
+          unsigned int m_slot;
+        };
+
+        /*!
+         * Ctor.
+         */
+        VaryingsOfUberShader(void);
+
+        ~VaryingsOfUberShader();
+
+        /*!
+         * Returns the total number of -compontents-.
+         */
+        unsigned int
+        total_number_components(void) const;
+
+        /*!
+         * Returns the list of varyings of an uber-shader.
+         * The pointer remains valid as long as this
+         * VaryingsOfUberShader object is not modified
+         * or destroyed.
+         */
+        c_array<const Varying>
+        data(void) const;
+
+      private:
+        friend class PainterBackendGLSL;
+        void *m_d;
+      };
+
+      /*!
        * Ctor.
        * \param glyph_atlas GlyphAtlas for glyphs drawn by the PainterBackend
        * \param image_atlas ImageAtlas for images drawn by the PainterBackend
@@ -921,8 +997,7 @@ namespace fastuidraw
       add_fragment_shader_util(const ShaderSource &src);
 
       /*!
-       * Add the uber-vertex and fragment shaders to given
-       * ShaderSource values.
+       * Add the uber-vertex and fragment shaders to given ShaderSource values.
        * \param out_vertex ShaderSource to which to add uber-vertex shader
        * \param out_fragment ShaderSource to which to add uber-fragment shader
        * \param contruct_params specifies how to construct the uber-shaders.
@@ -934,13 +1009,98 @@ namespace fastuidraw
        *                            FASTUIDRAW_DISCARD. PainterItemShaderGLSL
        *                            fragment sources use FASTUIDRAW_DISCARD
        *                            instead of discard.
+       * \param out_varyings if non-NULL have the varying information of the
+       *                     uber shaders written here.
        */
       void
       construct_shader(ShaderSource &out_vertex,
                        ShaderSource &out_fragment,
                        const UberShaderParams &contruct_params,
                        const ItemShaderFilter *item_shader_filter = nullptr,
-                       c_string discard_macro_value = "discard");
+                       c_string discard_macro_value = "discard",
+                       VaryingsOfUberShader *out_varyings = nullptr);
+
+      /*!
+       * Add the vertex uber-shader to a given ShaderSource.
+       * \param out_vertex ShaderSource to which to add uber-vertex shader
+       * \param contruct_params specifies how to construct the uber-shaders.
+       * \param item_shader_filter pointer to ItemShaderFilter to use to filter
+       *                           which shader to place into the uber-shader.
+       *                           A value of nullptr indicates to add all item
+       *                           shaders to the uber-shader.
+       * \param out_varyings if non-NULL have the varying information of the
+       *                     uber-vertex shader written here.
+       */
+      void
+      construct_vertex_shader(ShaderSource &out_vertex,
+                              const UberShaderParams &contruct_params,
+                              const ItemShaderFilter *item_shader_filter = nullptr,
+                              VaryingsOfUberShader *out_varyings = nullptr);
+
+      /*!
+       * Add the fragment uber-shader to a given ShaderSource.
+       * \param out_fragment ShaderSource to which to add uber-fragment shader
+       * \param contruct_params specifies how to construct the uber-shaders.
+       * \param item_shader_filter pointer to ItemShaderFilter to use to filter
+       *                           which shader to place into the uber-shader.
+       *                           A value of nullptr indicates to add all item
+       *                           shaders to the uber-shader.
+       * \param discard_macro_value macro-value definintion for the macro
+       *                            FASTUIDRAW_DISCARD. PainterItemShaderGLSL
+       *                            fragment sources use FASTUIDRAW_DISCARD
+       *                            instead of discard.
+       * \param out_varyings if non-NULL have the varying information of the
+       *                     uber-vertex shader written here.
+       */
+      void
+      construct_fragment_shader(ShaderSource &out_fragment,
+                                const UberShaderParams &contruct_params,
+                                const ItemShaderFilter *item_shader_filter = nullptr,
+                                c_string discard_macro_value = "discard",
+                                VaryingsOfUberShader *out_varyings = nullptr);
+      
+      /*!
+       * Construct a compute shader that performs clipping on input data
+       * from a vertex shader created by construct_vertex_shader(). The
+       * shader itself will have a two TBO uniforms from which to read
+       * clipplane values. The first TBO is the varying data written by
+       * an uber-vertex shader and the second TBO is the index data for
+       * drawing. The compute shader will write to two buffers. The
+       * first buffer is an interleaved attribute buffer to be consumed
+       * by a vertex shader of construct_vertex_shader_of_clipped_data().
+       * The second is an index buffer to be used with the attributes. The
+       * attribute buffer format is two elements, the first an ivec3 and
+       * the second a vec3. The index buffer produced consists of \ref
+       * PainterIndex values. The shader will produce 8 indices for every
+       * 3 indices of input and the outputted index buffer should be drawn
+       * as triange STRIPS with primitive restart enabled. The compute
+       * shader will write up to 7 additional attributes for every 3
+       * indices present in the source. Thus, the output index buffer size
+       * should be sizeof(uint) * 8 * NUM_IN_INDICES / 3 in size where
+       * NUM_IN_INDICES is the number of input indices and the output buffer
+       * should be sizeof(uint) * 6 * NUM_OUT_ATTRIBS where NUM_OUT_ATTRIBS
+       * is NUM_IN_ATTRIBUTES + 7 * NUM_IN_INDICES / 3.
+       *
+       * \param out_compute ShaderSource to which to add the compute clipping
+       *                    shader
+       * \param contruct_params specified how to construct the uber-shaders.
+       * \param varyings specifies the varying of the uber vertex and fragment
+       *                 shaders.
+       */
+      void
+      contruct_clipping_compute_shader(ShaderSource &out_compute,
+                                       const UberShaderParams &contruct_params,
+                                       const VaryingsOfUberShader &varyings);
+
+      /*!
+       * Construct a vertex shader that takes as input the output of a
+       * compute shade made with contruct_clipping_compute_shader() to
+       * be linked to an uber-fragment shader.
+       */
+      void
+      construct_vertex_shader_of_clipped_data(ShaderSource &out_vertex,
+                                              const UberShaderParams &contruct_params,
+                                              const VaryingsOfUberShader &varyings);
 
       /*!
        * Fill a buffer to hold the values for the uniforms
