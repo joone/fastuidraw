@@ -163,7 +163,7 @@ namespace
        * for the compute-shading clipping. We also place
        * it first to make its extraction in shaders easier.
        */
-      m_src_data.resize(obj.varyings() + 1);
+      m_src_data.resize(obj.varyings().size() + 1);
       m_src_data[0].m_is_flat = false;
       m_src_data[0].m_type = "vec4";
       m_src_data[0].m_name = "gl_Position";
@@ -845,6 +845,9 @@ construct_clipping_compute_shader(fastuidraw::glsl::ShaderSource &out_shader,
    *        new vertices formed from clipping. The attributes will are
    *        { vec3 bary; uvec3 src; }.
    */
+  FASTUIDRAWunused(out_shader);
+  FASTUIDRAWunused(contruct_params);
+  FASTUIDRAWunused(varyings);
 }
 
 void
@@ -865,6 +868,9 @@ construct_vertex_shader_of_clipped_data(fastuidraw::glsl::ShaderSource &out_shad
    *     into the TBO holding the vertex data processed by the uber-vertex shader.
    *  3. Emit varyings (and gl_Position) to the frag-shader correctly mixed
    */
+  FASTUIDRAWunused(out_shader);
+  FASTUIDRAWunused(contruct_params);
+  FASTUIDRAWunused(varyings);
 }
 
 void
@@ -1111,8 +1117,7 @@ construct_shader(fastuidraw::glsl::ShaderSource &out_shader,
 
     case PainterBackendGLSL::glyph_geometry_ssbo:
       {
-        vert.add_macro("FASTUIDRAW_GLYPH_DATA_STORE_SSBO");
-        frag.add_macro("FASTUIDRAW_GLYPH_DATA_STORE_SSBO");
+        out_shader.add_macro("FASTUIDRAW_GLYPH_DATA_STORE_SSBO");
       }
       break;
     }
@@ -1723,7 +1728,7 @@ contruct_clipping_compute_shader(ShaderSource &out_compute,
 
   d = static_cast<PainterBackendGLSLPrivate*>(m_d);
   vd = static_cast<VaryingsOfUberShaderPrivate*>(varyings.m_d);
-  d->construct_clipping_compute_shader(out_compute, construct_params, *vd);
+  d->construct_clipping_compute_shader(out_compute, contruct_params, *vd);
 }
 
 void
@@ -1737,7 +1742,7 @@ construct_vertex_shader_of_clipped_data(ShaderSource &out_vertex,
 
   d = static_cast<PainterBackendGLSLPrivate*>(m_d);
   vd = static_cast<VaryingsOfUberShaderPrivate*>(varyings.m_d);
-  d->construct_vertex_shader_of_clipped_data(out_compute, construct_params, *vd);
+  d->construct_vertex_shader_of_clipped_data(out_vertex, contruct_params, *vd);
 }
 
 uint32_t

@@ -1879,6 +1879,7 @@ configure_source_front_matter(void)
                                      ShaderSource::from_string);
     }
 
+  std::string version;        
   #ifdef FASTUIDRAW_GL_USE_GLES
     {
       if (m_p->configuration_glsl().clipping_type() == PainterBackendGLSL::clipping_via_clip_distance)
@@ -1899,7 +1900,6 @@ configure_source_front_matter(void)
         }
       else
         {
-          std::string version;
           if (m_ctx_properties.version() >= ivec2(3, 1))
             {
               version = "310 es";
@@ -1936,7 +1936,6 @@ configure_source_front_matter(void)
     }
   #else
     {
-
       bool using_glsl42, using_glsl43;
       GlyphAtlasGL *glyphs;
       bool require_ssbo;
@@ -1993,12 +1992,10 @@ configure_source_front_matter(void)
           m_front_matter_vert.specify_extension("GL_ARB_shader_storage_buffer_object", ShaderSource::require_extension);
           m_front_matter_frag.specify_extension("GL_ARB_shader_storage_buffer_object", ShaderSource::require_extension);
         }
-
-      m_front_matter_vert.specify_version(version.c_str());
-      m_front_matter_frag.specify_version(version.c_str());
-
     }
   #endif
+  m_front_matter_vert.specify_version(version.c_str());
+  m_front_matter_frag.specify_version(version.c_str());
 
   switch(m_interlock_type)
     {
