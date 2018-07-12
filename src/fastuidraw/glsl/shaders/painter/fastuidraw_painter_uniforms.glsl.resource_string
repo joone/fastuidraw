@@ -40,7 +40,7 @@ FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_GLYPH_TEXEL_ATLAS_FLOAT_BINDING) uniform sa
 #endif
 
 #ifdef FASTUIDRAW_GLYPH_DATA_STORE_SSBO
-  FASTUIDRAW_LAYOUT_BINDING_ARGS(FASTUIDRAW_GLYPH_GEOMETRY_STORE_BINDING, std140) buffer fastuidraw_glyphGeometryDataStore
+  FASTUIDRAW_LAYOUT_BINDING_ARGS(FASTUIDRAW_GLYPH_GEOMETRY_STORE_BINDING, std140) restrict readonly buffer fastuidraw_glyphGeometryDataStore
   {
     vec4 fastuidraw_glyphGeometryDataStore_data[];
   };
