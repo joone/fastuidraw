@@ -159,7 +159,7 @@ namespace fastuidraw
            * allows for cover then draw methods to be performed
            * WITHOUT any draw-breaks. The buffer is realized as
            * an "r8" image2D in the shader source. A backend will
-           * need to define the the functions (or macros) in their
+           * need to define the functions (or macros) in their
            * GLSL preamble:
            *  - fastuidraw_begin_interlock() which is called before access
            *  - fastuidraw_end_interlock() which is called after access
@@ -1055,11 +1055,46 @@ namespace fastuidraw
       
       /*!
        * Construct a compute shader that performs clipping on input data
-       * from a vertex shader created by construct_vertex_shader().
+       * from a vertex shader created by construct_vertex_shader(). The
+       * shader itself will have a two TBO uniforms from which to read
+       * clipplane values. The first TBO is the varying data written by
+       * an uber-vertex shader and the second TBO is the index data for
+       * drawing. The compute shader will write to two buffers. The
+       * first buffer is an interleaved attribute buffer to be consumed
+       * by a vertex shader of construct_vertex_shader_of_clipped_data().
+       * The second is an index buffer to be used with the attributes. The
+       * attribute buffer format is two elements, the first an ivec3 and
+       * the second a vec3. The index buffer produced consists of \ref
+       * PainterIndex values. The shader will produce 8 indices for every
+       * 3 indices of input and the outputted index buffer should be drawn
+       * as triange STRIPS with primitive restart enabled. The compute
+       * shader will write up to 7 additional attributes for every 3
+       * indices present in the source. Thus, the output index buffer size
+       * should be sizeof(uint) * 8 * NUM_IN_INDICES / 3 in size where
+       * NUM_IN_INDICES is the number of input indices and the output buffer
+       * should be sizeof(uint) * 6 * NUM_OUT_ATTRIBS where NUM_OUT_ATTRIBS
+       * is NUM_IN_ATTRIBUTES + 7 * NUM_IN_INDICES / 3.
+       *
+       * \param out_compute ShaderSource to which to add the compute clipping
+       *                    shader
+       * \param contruct_params specified how to construct the uber-shaders.
+       * \param varyings specifies the varying of the uber vertex and fragment
+       *                 shaders.
        */
       void
       contruct_clipping_compute_shader(ShaderSource &out_compute,
-                                       const UberShaderParams &contruct_params);
+                                       const UberShaderParams &contruct_params,
+                                       const VaryingsOfUberShader &varyings);
+
+      /*!
+       * Construct a vertex shader that takes as input the output of a
+       * compute shade made with contruct_clipping_compute_shader() to
+       * be linked to an uber-fragment shader.
+       */
+      void
+      construct_vertex_shader_of_clipped_data(ShaderSource &out_vertex,
+                                              const UberShaderParams &contruct_params,
+                                              const VaryingsOfUberShader &varyings);
 
       /*!
        * Fill a buffer to hold the values for the uniforms

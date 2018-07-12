@@ -158,9 +158,25 @@ namespace
     void
     initialize(const fastuidraw::glsl::detail::DeclareVaryings &obj)
     {
-      m_total_number_components = 0;
-      m_src_data = obj.varyings();
+      /* note that we also include gl_Position in the
+       * list of varyings; this is because we need it
+       * for the compute-shading clipping. We also place
+       * it first to make its extraction in shaders easier.
+       */
+      m_src_data.resize(obj.varyings() + 1);
+      m_src_data[0].m_is_flat = false;
+      m_src_data[0].m_type = "vec4";
+      m_src_data[0].m_name = "gl_Position";
+      m_src_data[0].m_num_components = 4;
+      m_src_data[0].m_slot = obj.varyings().size();
+      
+      for (unsigned int i = 1, endi = m_src_data.size(); i < endi; ++i)
+        {
+          m_src_data[i] = obj.varyings()[i - 1];
+        }
+
       m_data.resize(m_src_data.size());
+      m_total_number_components = 0;
       for (unsigned int i = 0, endi = m_data.size(); i < endi; ++i)
         {
           m_data[i].m_is_flat = m_src_data[i].m_is_flat;
@@ -200,6 +216,16 @@ namespace
                      const fastuidraw::glsl::PainterBackendGLSL::ItemShaderFilter *item_shader_filter,
                      fastuidraw::c_string discard_macro_value,
                      VaryingsOfUberShaderPrivate *out_varyings);
+
+    void
+    construct_clipping_compute_shader(fastuidraw::glsl::ShaderSource &out_shader,
+                                      const fastuidraw::glsl::PainterBackendGLSL::UberShaderParams &contruct_params,
+                                      const VaryingsOfUberShaderPrivate &varyings);
+
+    void
+    construct_vertex_shader_of_clipped_data(fastuidraw::glsl::ShaderSource &out_shader,
+                                            const fastuidraw::glsl::PainterBackendGLSL::UberShaderParams &contruct_params,
+                                            const VaryingsOfUberShaderPrivate &varyings);
 
     void
     update_varying_size(const fastuidraw::glsl::varying_list &plist);
@@ -308,13 +334,13 @@ PainterBackendGLSLPrivate(fastuidraw::glsl::PainterBackendGLSL *p,
                                                 m_p->image_atlas()->index_tile_size(),
                                                 m_p->image_atlas()->color_tile_size()))
     .add_source(code::curvepair_compute_pseudo_distance(m_p->glyph_atlas()->geometry_store()->alignment(),
-                                                                          "fastuidraw_curvepair_pseudo_distance",
-                                                                          "fastuidraw_fetch_glyph_data",
-                                                                          false))
+                                                        "fastuidraw_curvepair_pseudo_distance",
+                                                        "fastuidraw_fetch_glyph_data",
+                                                        false))
     .add_source(code::curvepair_compute_pseudo_distance(m_p->glyph_atlas()->geometry_store()->alignment(),
-                                                                          "fastuidraw_curvepair_pseudo_distance",
-                                                                          "fastuidraw_fetch_glyph_data",
-                                                                          true));
+                                                        "fastuidraw_curvepair_pseudo_distance",
+                                                        "fastuidraw_fetch_glyph_data",
+                                                        true));
 }
 
 PainterBackendGLSLPrivate::
@@ -793,6 +819,52 @@ declare_shader_uniforms(const fastuidraw::glsl::PainterBackendGLSL::UberShaderPa
     }
 
   return ostr.str();
+}
+
+void
+PainterBackendGLSLPrivate::
+construct_clipping_compute_shader(fastuidraw::glsl::ShaderSource &out_shader,
+                                  const fastuidraw::glsl::PainterBackendGLSL::UberShaderParams &contruct_params,
+                                  const VaryingsOfUberShaderPrivate &varyings)
+{
+  /* TODO.
+   *  1. Setup macro/function to read gl_Positions from the TBO
+   *     backed by a buffer holding the output of an uber-vertex-shader.
+   *     NOTE that gl_Position is packed FIRST in the transform-feedback
+   *     buffer and the actual usual varyings start after that. Also,
+   *     the field m_slot is pointless for TBO extraction, the location
+   *     of a component of a varying is entirely determined by the number of
+   *     components coming before it.
+   *  2. Include the yet-to-be-written compute shader that does clipping
+   *     a. does clipping computation
+   *     b. always writes 8 indices per input triangle where indices
+   *        are duplicated for degenerate triangles if needed and always
+   *        end on primitive_restart index (~0u)
+   *     c. compute shader will write upto 7 extra attributes for every
+   *        triangle; these extra attributes are only for the case of
+   *        new vertices formed from clipping. The attributes will are
+   *        { vec3 bary; uvec3 src; }.
+   */
+}
+
+void
+PainterBackendGLSLPrivate::
+construct_vertex_shader_of_clipped_data(fastuidraw::glsl::ShaderSource &out_shader,
+                                        const fastuidraw::glsl::PainterBackendGLSL::UberShaderParams &contruct_params,
+                                        const VaryingsOfUberShaderPrivate &varyings)
+{
+  /* TODO:
+   *  1. Setup macro/function from varyings to extract value from TBO
+   *     backed by a buffer holding the output of an uber-vertex-shader.
+   *     NOTE that gl_Position is packed FIRST in the transform-feedback
+   *     buffer and the actual usual varyings start after that. Also,
+   *     the field m_slot is pointless for TBO extraction, the location
+   *     of a component of a varying is entirely determined by the number of
+   *     components coming before it.
+   *  2. The attributes are { vec3 bary; uvec3 src; } where src is the index
+   *     into the TBO holding the vertex data processed by the uber-vertex shader.
+   *  3. Emit varyings (and gl_Position) to the frag-shader correctly mixed
+   */
 }
 
 void
@@ -1631,6 +1703,34 @@ construct_fragment_shader(ShaderSource &out_fragment,
 
   d->construct_shader(out_fragment, PainterBackendGLSLPrivate::uber_fragment_shader,
                       contruct_params, item_shader_filter, discard_macro_value, vd);
+}
+
+void
+fastuidraw::glsl::PainterBackendGLSL::
+contruct_clipping_compute_shader(ShaderSource &out_compute,
+                                 const UberShaderParams &contruct_params,
+                                 const VaryingsOfUberShader &varyings)
+{
+  PainterBackendGLSLPrivate *d;
+  VaryingsOfUberShaderPrivate *vd;
+
+  d = static_cast<PainterBackendGLSLPrivate*>(m_d);
+  vd = static_cast<VaryingsOfUberShaderPrivate*>(varyings.m_d);
+  d->construct_clipping_compute_shader(out_compute, construct_params, *vd);
+}
+
+void
+fastuidraw::glsl::PainterBackendGLSL::
+construct_vertex_shader_of_clipped_data(ShaderSource &out_vertex,
+                                        const UberShaderParams &contruct_params,
+                                        const VaryingsOfUberShader &varyings)
+{
+  PainterBackendGLSLPrivate *d;
+  VaryingsOfUberShaderPrivate *vd;
+
+  d = static_cast<PainterBackendGLSLPrivate*>(m_d);
+  vd = static_cast<VaryingsOfUberShaderPrivate*>(varyings.m_d);
+  d->construct_vertex_shader_of_clipped_data(out_compute, construct_params, *vd);
 }
 
 uint32_t
