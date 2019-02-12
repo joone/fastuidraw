@@ -308,11 +308,11 @@ namespace fastuidraw
         /*!
          * the index into GlyphAttribute::m_data storing
          * the fill rule and the offset into the store for
-         * the glyph data. The offset is encoded in the
-         * lower 31 bits (i.e. just mask off bit31) and
-         * the fill rule is non-zero fill rule if bit31
-         * is down and the odd-even fill rule if bit31 is
-         * up.
+         * the glyph data. The offset is encoded as follows
+         *  - bits0-bits29 encode the offset
+         *  - bit30 indicates to complement fill
+         *  - bit31 up indicates odd-even fill rule and
+         *          down indicates non-zero fill rule.
          */
         glyph_offset,
 
@@ -367,9 +367,7 @@ namespace fastuidraw
      * - GlyphGenerateParams::restricted_rays_split_thresh()
      * - GlyphGenerateParams::restricted_rays_max_recursion()
      * All contours added must be closed as well.
-     * \param f fill rule to use for rendering, must be one of
-     *          PainterEnums::nonzero_fill_rule or \ref
-     *          PainterEnums::odd_even_fill_rule.
+     * \param f fill rule to use for rendering
      * \param glyph_rect the rect of the glyph
      * \param units_per_EM the units per EM for the glyph; this value together with
      *                     GlyphGenerateParams::restricted_rays_minimum_render_size()
@@ -386,9 +384,7 @@ namespace fastuidraw
      * is called, no further data can be added. Instead of using methods from
      * \ref GlyphGenerateParams, directly specify how the data is broken into
      * boxes.
-     * \param f fill rule to use for rendering, must be one of
-     *          PainterEnums::nonzero_fill_rule or \ref
-     *          PainterEnums::odd_even_fill_rule.
+     * \param f fill rule to use for rendering
      * \param glyph_rect the rect of the glyph
      * \param split_thresh if the number of curves within a box is greater than
      *                     this value, the box is split
