@@ -402,9 +402,16 @@ namespace fastuidraw
      * \ref routine_fail if finalize() has not yet been called.
      * \param gpu_data location to which to write a c_array to the
      *                 GPU data.
+     * \param glyph_attributes location to which to write the glyph
+     *                         attribute values
+     * \param f value to use for fill rule (overrides the value passed
+     *          to finalize()).
+     * \param data_offset location of GPU glyph data within atlas
      */
     enum return_code
-    query(c_array<const fastuidraw::generic_data> *gpu_data) const;
+    query(c_array<const fastuidraw::generic_data> *gpu_data,
+          vecN<GlyphAttribute, glyph_num_attributes> *glyph_attributes,
+          enum PainterEnums::fill_rule_t f, uint32_t data_offset) const;
 
     virtual
     c_array<const c_string>
