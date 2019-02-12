@@ -54,13 +54,33 @@ namespace
     return fp16.x() | (fp16.y() << 16u);
   }
 
+  bool
+  is_flat(float a, float b, float c)
+  {
+    fastuidraw::vec3 v(a, b, c);
+    fastuidraw::vecN<uint16_t, 3> hv;
+
+    fastuidraw::convert_to_fp16(v, hv);
+    return hv[0] == hv[1] && hv[1] == hv[2];
+  }
+
+  bool
+  is_flat(float a, float b)
+  {
+    fastuidraw::vec2 v(a, b);
+    fastuidraw::vecN<uint16_t, 2> hv;
+
+    fastuidraw::convert_to_fp16(v, hv);
+    return hv[0] == hv[1];
+  }
+
   class GlyphPath;
 
   class Transformation
   {
   public:
     explicit
-    Transformation(const fastuidraw::RectT<int> &glyph_rect)
+    Transformation(const fastuidraw::Rect &glyph_rect)
     {
       const float V(2 * fastuidraw::GlyphRenderDataBandedRays::glyph_coord_value);
       const float M(-fastuidraw::GlyphRenderDataBandedRays::glyph_coord_value);
@@ -82,23 +102,23 @@ namespace
   class Curve
   {
   public:
-    Curve(fastuidraw::ivec2 a,
-          fastuidraw::ivec2 b):
+    Curve(fastuidraw::vec2 a,
+          fastuidraw::vec2 b):
       m_start(a),
       m_end(b),
       m_control((m_start + m_end) * 0.5f),
-      m_is_horizontal(a.y() == b.y()),
-      m_is_vertical(a.x() == b.x())
+      m_is_horizontal(is_flat(a.y(), b.y())),
+      m_is_vertical(is_flat(a.x(), b.x()))
     {}
 
-    Curve(fastuidraw::ivec2 a,
-          fastuidraw::ivec2 ct,
-          fastuidraw::ivec2 b):
+    Curve(fastuidraw::vec2 a,
+          fastuidraw::vec2 ct,
+          fastuidraw::vec2 b):
       m_start(a),
       m_end(b),
       m_control(ct),
-      m_is_horizontal(a.y() == b.y() && a.y() == ct.y()),
-      m_is_vertical(a.x() == b.x() && a.x() == ct.x())
+      m_is_horizontal(is_flat(a.y(), b.y(), ct.y())),
+      m_is_vertical(is_flat(a.x(), b.x(), ct.x()))
     {}
 
     void
@@ -209,12 +229,12 @@ namespace
     {}
 
     explicit
-    Contour(fastuidraw::ivec2 pt):
+    Contour(fastuidraw::vec2 pt):
       m_last_pt(pt)
     {}
 
     void
-    line_to(fastuidraw::ivec2 pt)
+    line_to(fastuidraw::vec2 pt)
     {
       if (m_last_pt != pt)
         {
@@ -224,8 +244,8 @@ namespace
     }
 
     void
-    quadratic_to(fastuidraw::ivec2 ct,
-                 fastuidraw::ivec2 pt)
+    quadratic_to(fastuidraw::vec2 ct,
+                 fastuidraw::vec2 pt)
     {
       if (m_last_pt != pt)
         {
@@ -263,7 +283,7 @@ namespace
     }
 
   private:
-    fastuidraw::ivec2 m_last_pt;
+    fastuidraw::vec2 m_last_pt;
     std::vector<Curve> m_curves;
   };
 
@@ -288,7 +308,8 @@ namespace
   public:
     static
     float
-    create_bands(std::vector<Band> *dst, const GlyphPath &path);
+    create_bands(std::vector<Band> *dst, const GlyphPath &path,
+                 unsigned int max_num_iterations, float avg_curve_thresh);
 
     void
     assign_curve_list_offset(CurveListHoard<BandType> &hoard, uint32_t &value)
@@ -350,7 +371,7 @@ namespace
     {}
 
     void
-    move_to(fastuidraw::ivec2 pt)
+    move_to(fastuidraw::vec2 pt)
     {
       if (!m_contours.empty() && m_contours.back().empty())
         {
@@ -361,15 +382,15 @@ namespace
     }
 
     void
-    quadratic_to(fastuidraw::ivec2 ct,
-                 fastuidraw::ivec2 pt)
+    quadratic_to(fastuidraw::vec2 ct,
+                 fastuidraw::vec2 pt)
     {
       FASTUIDRAWassert(!m_contours.empty());
       m_contours.back().quadratic_to(ct, pt);
     }
 
     void
-    line_to(fastuidraw::ivec2 pt)
+    line_to(fastuidraw::vec2 pt)
     {
       FASTUIDRAWassert(!m_contours.empty());
       m_contours.back().line_to(pt);
@@ -407,7 +428,7 @@ namespace
     }
 
     void
-    transform_curves(const fastuidraw::RectT<int> &bb);
+    transform_curves(const fastuidraw::Rect &bb);
 
   private:
     std::vector<Contour> m_contours;
@@ -654,13 +675,12 @@ Band(const GlyphPath &path, const Band *parent, float min_v, float max_v):
 template<enum band_t BandType>
 float
 Band<BandType>::
-create_bands(std::vector<Band> *pdst, const GlyphPath &path)
+create_bands(std::vector<Band> *pdst, const GlyphPath &path,
+             unsigned int max_num_iterations, float avg_curve_thresh)
 {
   const float width(2 * fastuidraw::GlyphRenderDataBandedRays::glyph_coord_value);
   const float epsilon(1e-5);
   const float slack(epsilon * width);
-  const float avg_curve_thresh(fastuidraw::GlyphGenerateParams::banded_rays_average_number_curves_thresh());
-  const unsigned int max_num_iterations(fastuidraw::GlyphGenerateParams::banded_rays_max_recursion());
   float avg_num_curves;
   unsigned int num_iterations;
   std::vector<std::vector<Band> > tmp(1);
@@ -768,7 +788,7 @@ divide(std::vector<Band> *dst, const GlyphPath &path, float slack) const
 //GlyphPath methods
 void
 GlyphPath::
-transform_curves(const fastuidraw::RectT<int> &bb)
+transform_curves(const fastuidraw::Rect &bb)
 {
   while (!m_contours.empty() && m_contours.back().empty())
     {
@@ -802,7 +822,7 @@ fastuidraw::GlyphRenderDataBandedRays::
 
 void
 fastuidraw::GlyphRenderDataBandedRays::
-move_to(ivec2 pt)
+move_to(vec2 pt)
 {
   GlyphRenderDataBandedRaysPrivate *d;
 
@@ -817,7 +837,7 @@ move_to(ivec2 pt)
 
 void
 fastuidraw::GlyphRenderDataBandedRays::
-quadratic_to(ivec2 ct, ivec2 pt)
+quadratic_to(vec2 ct, vec2 pt)
 {
   GlyphRenderDataBandedRaysPrivate *d;
 
@@ -832,7 +852,7 @@ quadratic_to(ivec2 ct, ivec2 pt)
 
 void
 fastuidraw::GlyphRenderDataBandedRays::
-line_to(ivec2 pt)
+line_to(vec2 pt)
 {
   GlyphRenderDataBandedRaysPrivate *d;
 
@@ -847,7 +867,16 @@ line_to(ivec2 pt)
 
 void
 fastuidraw::GlyphRenderDataBandedRays::
-finalize(enum PainterEnums::fill_rule_t f, const RectT<int> &glyph_rect)
+finalize(enum PainterEnums::fill_rule_t f, const Rect &glyph_rect)
+{
+  finalize(f, glyph_rect, GlyphGenerateParams::banded_rays_max_recursion(),
+           GlyphGenerateParams::banded_rays_average_number_curves_thresh());
+}
+
+void
+fastuidraw::GlyphRenderDataBandedRays::
+finalize(enum PainterEnums::fill_rule_t f, const Rect &glyph_rect,
+         int max_recursion, float avg_num_curves_thresh)
 {
   GlyphRenderDataBandedRaysPrivate *d;
   ivec2 sz;
@@ -859,7 +888,6 @@ finalize(enum PainterEnums::fill_rule_t f, const RectT<int> &glyph_rect)
       return;
     }
 
-  FASTUIDRAWassert(f == PainterEnums::odd_even_fill_rule || f == PainterEnums::nonzero_fill_rule);
   d->m_fill_rule = f;
 
   if (d->m_glyph->num_contours() == 0
@@ -885,10 +913,17 @@ finalize(enum PainterEnums::fill_rule_t f, const RectT<int> &glyph_rect)
   std::vector<Band<horizontal_band> > split_horiz_bands;
   std::vector<Band<vertical_band> > split_vert_bands;
 
-  d->m_render_cost[horizontal_band_avg_curve_count] = Band<horizontal_band>::create_bands(&split_horiz_bands, *d->m_glyph);
-  d->m_render_cost[vertical_band_avg_curve_count] = Band<vertical_band>::create_bands(&split_vert_bands, *d->m_glyph);
+  d->m_render_cost[horizontal_band_avg_curve_count]
+    = Band<horizontal_band>::create_bands(&split_horiz_bands, *d->m_glyph,
+                                          max_recursion, avg_num_curves_thresh);
+
+  d->m_render_cost[vertical_band_avg_curve_count]
+    = Band<vertical_band>::create_bands(&split_vert_bands, *d->m_glyph,
+                                        max_recursion, avg_num_curves_thresh);
+
   d->m_render_cost[number_horizontal_bands] = split_horiz_bands.size();
   d->m_render_cost[number_vertical_bands] = split_vert_bands.size();
+
   d->m_render_cost[total_number_curves] = d->m_glyph->total_number_curves();
 
   /* step 2: compute the offsets. The data packing is first
@@ -999,14 +1034,20 @@ upload_to_atlas(GlyphAtlasProxy &atlas_proxy,
   attributes[glyph_num_vertical_bands].m_data = uvec4(d->m_num_bands[vertical_band]);
   attributes[glyph_num_horizontal_bands].m_data = uvec4(d->m_num_bands[horizontal_band]);
 
-  /* If the fill rule is odd-even, the leading bit
-   * of data_offset is made to be up.
-   */
+  /* the leading two bits encode the fill rule */
   FASTUIDRAWassert((data_offset & FASTUIDRAW_MASK(31u, 1)) == 0u);
-  if (d->m_fill_rule == PainterEnums::odd_even_fill_rule)
+  FASTUIDRAWassert((data_offset & FASTUIDRAW_MASK(30u, 1)) == 0u);
+  if (d->m_fill_rule == PainterEnums::odd_even_fill_rule
+      || d->m_fill_rule == PainterEnums::complement_odd_even_fill_rule)
     {
       data_offset |= FASTUIDRAW_MASK(31u, 1);
     }
+  if (d->m_fill_rule == PainterEnums::complement_odd_even_fill_rule
+      || d->m_fill_rule == PainterEnums::complement_nonzero_fill_rule)
+    {
+      data_offset |= FASTUIDRAW_MASK(30u, 1);
+    }
+
   attributes[glyph_offset].m_data = uvec4(data_offset);
 
   for (unsigned int i = 0; i < num_costs; ++i)
@@ -1019,7 +1060,8 @@ upload_to_atlas(GlyphAtlasProxy &atlas_proxy,
 
 enum fastuidraw::return_code
 fastuidraw::GlyphRenderDataBandedRays::
-query(c_array<const fastuidraw::generic_data> *gpu_data) const
+query(c_array<const fastuidraw::generic_data> *gpu_data,
+      int *number_vertical_bands, int *number_horizontal_bands) const
 {
   GlyphRenderDataBandedRaysPrivate *d;
   d = static_cast<GlyphRenderDataBandedRaysPrivate*>(m_d);
@@ -1031,6 +1073,8 @@ query(c_array<const fastuidraw::generic_data> *gpu_data) const
     }
 
   *gpu_data = make_c_array(d->m_render_data);
+  *number_vertical_bands = d->m_num_bands[vertical_band];
+  *number_horizontal_bands = d->m_num_bands[horizontal_band];
 
   return routine_success;
 }

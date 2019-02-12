@@ -114,7 +114,10 @@ namespace fastuidraw
     enum
       {
         /* The glyph coordinate value in each coordiante varies
-         * from -\ref glyph_coord_value to +\ref glyph_coord_value
+         * from -\ref glyph_coord_value to +\ref glyph_coord_value,
+         * i.e. the glyph is drawn as rect with min-corner
+         * (-\ref glyph_coord_value, -\ref glyph_coord_value)
+         * and max-corner (+\ref glyph_coord_value, +\ref glyph_coord_value)
          */
         glyph_coord_value = 32,
       };
@@ -159,11 +162,11 @@ namespace fastuidraw
         /*!
          * the index into GlyphAttribute::m_data storing
          * the fill rule and the offset into the store for
-         * the glyph data. The offset is encoded in the
-         * lower 31 bits (i.e. just mask off bit31) and
-         * the fill rule is non-zero fill rule if bit31
-         * is down and the odd-even fill rule if bit31
-         * is up.
+         * the glyph data. The offset is encoded as follows
+         *  - bits0-bits29 encode the offset
+         *  - bit30 indicates to complement fill
+         *  - bit31 up indicates odd-even fill rule and
+         *          down indicates non-zero fill rule.
          */
         glyph_offset,
 
@@ -188,7 +191,7 @@ namespace fastuidraw
      * \param pt start point of the new contour
      */
     void
-    move_to(ivec2 pt);
+    move_to(vec2 pt);
 
     /*!
      * Add a line segment connecting the end point of the
@@ -197,7 +200,7 @@ namespace fastuidraw
      * \param pt end point of the new line segment
      */
     void
-    line_to(ivec2 pt);
+    line_to(vec2 pt);
 
     /*!
      * Add a quadratic curveconnecting the end point of the
@@ -206,7 +209,7 @@ namespace fastuidraw
      * \param pt end point of the quadratic curve
      */
     void
-    quadratic_to(ivec2 ct, ivec2 pt);
+    quadratic_to(vec2 ct, vec2 pt);
 
     /*!
      * Finalize the input data after which no more contours or curves may be added;
@@ -217,18 +220,50 @@ namespace fastuidraw
      *          PainterEnums::nonzero_fill_rule or \ref
      *          PainterEnums::odd_even_fill_rule.
      * \param glyph_rect the rect of the glpyh
+     * \param max_recursion maximum level of recursion to employ to reduce the
+     *                      complexity of each band. The number of bands that are
+     *                      generated in a dimension is 2^N where N is the number
+     *                      of levels of recursion used to generate bands.
+     * \param avg_num_curves_thresh when a band is generated, the average number of
+     *                              curves needed to perform the coverage computation
+     *                              is computed. When that value is lower than this
+     *                              parameter, the band is considered that is does
+     *                              not need to be reduced to smaller bands.
      */
     void
-    finalize(enum PainterEnums::fill_rule_t f, const RectT<int> &glyph_rect);
+    finalize(enum PainterEnums::fill_rule_t f, const Rect &glyph_rect,
+             int max_recursion, float avg_num_curves_thresh);
+
+    /*!
+     * Finalize the input data after which no more contours or curves may be added;
+     * all added contours must be closed before calling finalize(). Once finalize()
+     * is called, no further data can be added. All contours added must be closed as
+     * well. Provided as a conveniance, equivalent to
+     * \code
+     * finalize(f, glyph_rect, GlyphGenerateParams::banded_rays_max_recursion(),
+     *          GlyphGenerateParams::banded_rays_average_number_curves_thresh());
+     * \endcode
+     * \param f fill rule to use for rendering, must be one of
+     *          PainterEnums::nonzero_fill_rule or \ref
+     *          PainterEnums::odd_even_fill_rule.
+     * \param glyph_rect the rect of the glpyh
+     */
+    void
+    finalize(enum PainterEnums::fill_rule_t f, const Rect &glyph_rect);
 
     /*!
      * Query the data; may only be called after finalize(). Returns
      * \ref routine_fail if finalize() has not yet been called.
      * \param gpu_data location to which to write a c_array to the
      *                 GPU data.
+     * \param num_vert_bands location to which to write the number of
+     *                       vertical bands of the glyph
+     * \param num_horiz_bands location to which to write the number of
+     *                        horizontal bands of the glyph
      */
     enum return_code
-    query(c_array<const fastuidraw::generic_data> *gpu_data) const;
+    query(c_array<const fastuidraw::generic_data> *gpu_data,
+          int *num_vert_bands, int *num_horiz_bands) const;
 
     virtual
     c_array<const c_string>

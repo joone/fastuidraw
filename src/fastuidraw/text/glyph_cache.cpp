@@ -312,7 +312,6 @@ namespace
     fastuidraw::reference_counted_ptr<fastuidraw::GlyphAtlas> m_atlas;
     Store<glyph_key, GlyphDataPrivate> m_glyphs;
     Store<glyph_metrics_key, GlyphMetricsPrivate> m_glyph_metrics;
-    unsigned int m_number_times_atlas_cleared;
     fastuidraw::GlyphCache *m_p;
   };
 }
@@ -442,7 +441,6 @@ GlyphCachePrivate::
 GlyphCachePrivate(fastuidraw::reference_counted_ptr<fastuidraw::GlyphAtlas> patlas,
                   fastuidraw::GlyphCache *p):
   m_atlas(patlas),
-  m_number_times_atlas_cleared(0),
   m_p(p)
 {}
 
@@ -582,7 +580,7 @@ metrics(void) const
   return GlyphMetrics(p->m_metrics);
 }
 
-fastuidraw::reference_counted_ptr<fastuidraw::GlyphCache>
+fastuidraw::GlyphCache*
 fastuidraw::Glyph::
 cache(void) const
 {
@@ -1060,7 +1058,6 @@ clear_atlas(void)
 
   std::lock_guard<std::mutex> m(d->m_glyphs_mutex);
   d->m_atlas->clear();
-  ++d->m_number_times_atlas_cleared;
   for(GlyphDataPrivate *g : d->m_glyphs.data())
     {
       /* setting m_uploaded_to_atlas marks the Glyph
@@ -1084,7 +1081,6 @@ clear_cache(void)
   d->m_atlas->clear();
   d->m_glyphs.clear();
   d->m_glyph_metrics.clear();
-  ++d->m_number_times_atlas_cleared;
 }
 
 unsigned int
@@ -1098,5 +1094,38 @@ number_times_atlas_cleared(void)
    */
   GlyphCachePrivate *d;
   d = static_cast<GlyphCachePrivate*>(m_d);
-  return d->m_number_times_atlas_cleared;
+  return d->m_atlas->number_times_cleared();
+}
+
+fastuidraw::GlyphCache::AllocationHandle
+fastuidraw::GlyphCache::
+allocate_data(c_array<const generic_data> pdata)
+{
+  AllocationHandle A;
+  GlyphCachePrivate *d;
+  int L;
+
+  d = static_cast<GlyphCachePrivate*>(m_d);
+  std::lock_guard<std::mutex> m1(d->m_glyphs_mutex);
+  L = d->m_atlas->allocate_data(pdata);
+  if (L >= 0)
+    {
+      A.m_size = pdata.size();
+      A.m_location = L;
+    }
+  return A;
+}
+
+void
+fastuidraw::GlyphCache::
+deallocate_data(AllocationHandle h)
+{
+  GlyphCachePrivate *d;
+  d = static_cast<GlyphCachePrivate*>(m_d);
+
+  if (h.m_size > 0)
+    {
+      std::lock_guard<std::mutex> m1(d->m_glyphs_mutex);
+      d->m_atlas->deallocate_data(h.m_location, h.m_size);
+    }
 }
