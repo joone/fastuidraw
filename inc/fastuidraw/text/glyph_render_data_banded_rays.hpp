@@ -258,6 +258,9 @@ namespace fastuidraw
      *                 GPU data.
      * \param glyph_attributes location to which to write the glyph
      *                         attribute values
+     * \param f value to use for fill rule (overrides the value passed
+     *          to finalize()).
+     * \param data_offset location of GPU glyph data within atlas
      */
     enum return_code
     query(c_array<const fastuidraw::generic_data> *gpu_data,
