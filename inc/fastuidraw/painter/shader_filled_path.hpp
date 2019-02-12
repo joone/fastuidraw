@@ -118,7 +118,15 @@ public:
   void
   render_data(enum PainterEnums::fill_rule_t fill_rule,
               c_array<const PainterAttribute> *out_attribs,
-              c_array<const PainterIndex> *out_indices);
+              c_array<const PainterIndex> *out_indices) const;
+
+  /*!
+   * Returns the \ref glyph_type of the ShaderFilledPath.
+   * Any glyph shader that accepts the returned glyph_type
+   * can then also be used to draw the ShaderFilledPath.
+   */
+  enum glyph_type
+  render_type(void) const;
 
 private:
   void *m_d;

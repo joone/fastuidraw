@@ -28,6 +28,7 @@
 namespace
 {
   typedef fastuidraw::GlyphRenderDataBandedRays RenderData;
+  const enum fastuidraw::glyph_type GlyphType = fastuidraw::banded_rays_glyph;
 
   class BuilderPrivate
   {
@@ -276,11 +277,18 @@ void
 fastuidraw::ShaderFilledPath::
 render_data(enum PainterEnums::fill_rule_t fill_rule,
             c_array<const PainterAttribute> *out_attribs,
-            c_array<const PainterIndex> *out_indices)
+            c_array<const PainterIndex> *out_indices) const
 {
   ShaderFilledPathPrivate *d;
   d = static_cast<ShaderFilledPathPrivate*>(m_d);
 
   *out_attribs = d->attribute_data(fill_rule).m_attribs;
   *out_indices = d->indices();
+}
+
+enum fastuidraw::glyph_type
+fastuidraw::ShaderFilledPath::
+render_type(void) const
+{
+  return GlyphType;
 }
