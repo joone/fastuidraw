@@ -256,14 +256,13 @@ namespace fastuidraw
      * \ref routine_fail if finalize() has not yet been called.
      * \param gpu_data location to which to write a c_array to the
      *                 GPU data.
-     * \param num_vert_bands location to which to write the number of
-     *                       vertical bands of the glyph
-     * \param num_horiz_bands location to which to write the number of
-     *                        horizontal bands of the glyph
+     * \param glyph_attributes location to which to write the glyph
+     *                         attribute values
      */
     enum return_code
     query(c_array<const fastuidraw::generic_data> *gpu_data,
-          int *num_vert_bands, int *num_horiz_bands) const;
+          vecN<GlyphAttribute, glyph_num_attributes> *glyph_attributes,
+          enum PainterEnums::fill_rule_t f, uint32_t data_offset) const;
 
     virtual
     c_array<const c_string>
