@@ -380,7 +380,7 @@ namespace
     start_contour_if_necessary(void);
 
     void
-    ready_shader_filled_path(const fastuidraw::reference_counted_ptr<fastuidraw::GlyphAtlas> &glyph_atlas);
+    ready_shader_filled_path(void);
 
     enum fastuidraw::return_code
     ready_shader_filled_path_contour(fastuidraw::ShaderFilledPath::Builder *B,
@@ -1745,7 +1745,7 @@ ready_shader_filled_path_contour(fastuidraw::ShaderFilledPath::Builder *B,
 
 void
 PathPrivate::
-ready_shader_filled_path(const fastuidraw::reference_counted_ptr<fastuidraw::GlyphAtlas> &glyph_atlas)
+ready_shader_filled_path(void)
 {
   using namespace fastuidraw;
 
@@ -1764,7 +1764,7 @@ ready_shader_filled_path(const fastuidraw::reference_counted_ptr<fastuidraw::Gly
           return;
         }
     }
-  m_shader_filled_path = FASTUIDRAWnew ShaderFilledPath(B, glyph_atlas);
+  m_shader_filled_path = FASTUIDRAWnew ShaderFilledPath(B);
 }
 
 /////////////////////////////////////////
@@ -2184,11 +2184,11 @@ contour(unsigned int i) const
 
 const fastuidraw::reference_counted_ptr<const fastuidraw::ShaderFilledPath>&
 fastuidraw::Path::
-shader_filled_path(const reference_counted_ptr<GlyphAtlas> &glyph_atlas) const
+shader_filled_path(void) const
 {
   PathPrivate *d;
   d = static_cast<PathPrivate*>(m_d);
 
-  d->ready_shader_filled_path(glyph_atlas);
+  d->ready_shader_filled_path();
   return d->m_shader_filled_path;
 }

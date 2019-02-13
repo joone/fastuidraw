@@ -1064,7 +1064,7 @@ public:
    * quadratic Bezier curves or cubic Bezier curves.
    */
   const reference_counted_ptr<const ShaderFilledPath>&
-  shader_filled_path(const reference_counted_ptr<GlyphAtlas> &glyph_atlas) const;
+  shader_filled_path(void) const;
 
 private:
   void *m_d;
