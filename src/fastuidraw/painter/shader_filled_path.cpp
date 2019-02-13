@@ -18,6 +18,7 @@
 
 #include <vector>
 #include <fastuidraw/text/font.hpp>
+#include <fastuidraw/text/glyph.hpp>
 #include <fastuidraw/text/glyph_render_data_banded_rays.hpp>
 #include <fastuidraw/text/glyph_render_data_restricted_rays.hpp>
 #include <fastuidraw/painter/shader_filled_path.hpp>
@@ -50,7 +51,7 @@ namespace
   {
   public:
     ShaderFilledPathPrivate(BuilderPrivate &B,
-                            const fastuidraw::reference_counted_ptr<fastuidraw::GlyphCache> &cache);
+                            const fastuidraw::reference_counted_ptr<fastuidraw::GlyphAtlas> &atlas);
     ~ShaderFilledPathPrivate();
 
     const PerFillRule&
@@ -60,9 +61,9 @@ namespace
     void
     update_attribute_data(void);
 
-    fastuidraw::reference_counted_ptr<fastuidraw::GlyphCache> m_cache;
+    fastuidraw::reference_counted_ptr<fastuidraw::GlyphAtlas> m_atlas;
     fastuidraw::BoundingBox<float> m_bbox;
-    fastuidraw::GlyphCache::AllocationHandle m_allocation;
+    int m_allocation;
     std::vector<fastuidraw::generic_data> m_gpu_data;
     RenderData::query_info m_query_data;
 
@@ -75,9 +76,10 @@ namespace
 // ShaderFilledPathPrivate methods
 ShaderFilledPathPrivate::
 ShaderFilledPathPrivate(BuilderPrivate &B,
-                        const fastuidraw::reference_counted_ptr<fastuidraw::GlyphCache> &cache):
-  m_cache(cache),
+                        const fastuidraw::reference_counted_ptr<fastuidraw::GlyphAtlas> &atlas):
+  m_atlas(atlas),
   m_bbox(B.m_bbox),
+  m_allocation(-1),
   m_number_times_atlas_cleared(0)
 {
   using namespace fastuidraw;
@@ -99,9 +101,9 @@ ShaderFilledPathPrivate(BuilderPrivate &B,
 ShaderFilledPathPrivate::
 ~ShaderFilledPathPrivate()
 {
-  if (m_allocation.valid() && m_number_times_atlas_cleared == m_cache->number_times_atlas_cleared())
+  if (m_allocation != -1 && m_number_times_atlas_cleared == m_atlas->number_times_cleared())
     {
-      m_cache->deallocate_data(m_allocation);
+      m_atlas->deallocate_data(m_allocation, m_gpu_data.size());
     }
 }
 
@@ -110,13 +112,13 @@ ShaderFilledPathPrivate::
 per_fill_rule(enum fastuidraw::PainterEnums::fill_rule_t fill_rule)
 {
   using namespace fastuidraw;
-  if (!m_allocation.valid() || m_number_times_atlas_cleared != m_cache->number_times_atlas_cleared())
+  if (m_allocation == -1 || m_number_times_atlas_cleared != m_atlas->number_times_cleared())
     {
-      m_number_times_atlas_cleared = m_cache->number_times_atlas_cleared();
-      m_allocation = m_cache->allocate_data(make_c_array(m_gpu_data));
+      m_number_times_atlas_cleared = m_atlas->number_times_cleared();
+      m_allocation = m_atlas->allocate_data(make_c_array(m_gpu_data));
       update_attribute_data();
     }
-  FASTUIDRAWassert(m_allocation.valid());
+  FASTUIDRAWassert(m_allocation != -1);
   return m_per_fill_rule[fill_rule];
 }
 
@@ -125,11 +127,13 @@ ShaderFilledPathPrivate::
 update_attribute_data(void)
 {
   using namespace fastuidraw;
+
+  FASTUIDRAWassert(m_allocation != -1);
   for (unsigned int f = 0; f < m_per_fill_rule.size(); ++f)
     {
       m_query_data.set_glyph_attributes(&m_per_fill_rule[f].m_glyph_attribs,
                                         static_cast<enum PainterEnums::fill_rule_t>(f),
-                                        m_allocation.location());
+                                        m_allocation);
       Glyph::pack_raw(m_per_fill_rule[f].m_glyph_attribs,
                       0, m_per_fill_rule[f].m_attribs,
                       0, m_per_fill_rule[f].m_indices,
@@ -227,12 +231,12 @@ cubic_to(vec2 ct0, vec2 ct1, vec2 pt)
 // fastuidraw::ShaderFilledPath methods
 fastuidraw::ShaderFilledPath::
 ShaderFilledPath(const Builder &B,
-                 const reference_counted_ptr<GlyphCache> &glyph_cache)
+                 const reference_counted_ptr<GlyphAtlas> &glyph_atlas)
 {
   BuilderPrivate *bd;
   bd = static_cast<BuilderPrivate*>(B.m_d);
 
-  m_d = FASTUIDRAWnew ShaderFilledPathPrivate(*bd, glyph_cache);
+  m_d = FASTUIDRAWnew ShaderFilledPathPrivate(*bd, glyph_atlas);
 }
 
 fastuidraw::ShaderFilledPath::

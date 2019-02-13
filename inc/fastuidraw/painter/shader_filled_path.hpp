@@ -25,7 +25,7 @@
 #include <fastuidraw/util/rect.hpp>
 #include <fastuidraw/util/matrix.hpp>
 #include <fastuidraw/util/reference_counted.hpp>
-#include <fastuidraw/text/glyph_cache.hpp>
+#include <fastuidraw/text/glyph_atlas.hpp>
 #include <fastuidraw/text/glyph_render_data.hpp>
 #include <fastuidraw/painter/painter_attribute_data.hpp>
 #include <fastuidraw/painter/painter_enums.hpp>
@@ -100,7 +100,7 @@ public:
   };
 
   ShaderFilledPath(const Builder &B,
-                   const reference_counted_ptr<GlyphCache> &glyph_cache);
+                   const reference_counted_ptr<GlyphAtlas> &glyph_cache);
 
   ~ShaderFilledPath();
 
