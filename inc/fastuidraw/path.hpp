@@ -27,6 +27,7 @@
 #include <fastuidraw/util/reference_counted.hpp>
 #include <fastuidraw/path_enums.hpp>
 #include <fastuidraw/tessellated_path.hpp>
+#include <fastuidraw/painter/shader_filled_path.hpp>
 
 namespace fastuidraw  {
 
@@ -1055,6 +1056,15 @@ public:
    */
   const reference_counted_ptr<const TessellatedPath>&
   tessellation(void) const;
+
+  /*!
+   * Returns the \ref ShaderFilledPath coming from this
+   * Path. The returned reference will be null if the
+   * Path contains anything besides line segments,
+   * quadratic Bezier curves or cubic Bezier curves.
+   */
+  const reference_counted_ptr<const ShaderFilledPath>&
+  shader_filled_path(const reference_counted_ptr<GlyphAtlas> &glyph_atlas) const;
 
 private:
   void *m_d;

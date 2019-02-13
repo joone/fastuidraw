@@ -379,6 +379,17 @@ namespace
     void
     start_contour_if_necessary(void);
 
+    void
+    ready_shader_filled_path(const fastuidraw::reference_counted_ptr<fastuidraw::GlyphAtlas> &glyph_atlas);
+
+    enum fastuidraw::return_code
+    ready_shader_filled_path_contour(fastuidraw::ShaderFilledPath::Builder *B,
+                                     const fastuidraw::PathContour *contour);
+
+    enum fastuidraw::return_code
+    ready_shader_filled_path_interpolator(fastuidraw::ShaderFilledPath::Builder *B,
+                                          const fastuidraw::PathContour::interpolator_base *intepolator);
+
     std::vector<fastuidraw::reference_counted_ptr<fastuidraw::PathContour> > m_contours;
     enum fastuidraw::PathEnums::edge_type_t m_next_edge_type;
 
@@ -390,6 +401,8 @@ namespace
     unsigned int m_start_check_bb;
     fastuidraw::BoundingBox<float> m_bb;
     bool m_is_flat;
+    bool m_shader_filled_path_ready;
+    fastuidraw::reference_counted_ptr<const fastuidraw::ShaderFilledPath> m_shader_filled_path;
     fastuidraw::Path *m_p;
   };
 }
@@ -1582,6 +1595,7 @@ PathPrivate(fastuidraw::Path *p):
   m_tess_list(),
   m_start_check_bb(0),
   m_is_flat(true),
+  m_shader_filled_path_ready(false),
   m_p(p)
 {
 }
@@ -1594,6 +1608,8 @@ PathPrivate(fastuidraw::Path *p, const PathPrivate &obj):
   m_start_check_bb(obj.m_start_check_bb),
   m_bb(obj.m_bb),
   m_is_flat(obj.m_is_flat),
+  m_shader_filled_path_ready(obj.m_shader_filled_path_ready),
+  m_shader_filled_path(obj.m_shader_filled_path),
   m_p(p)
 {
   /* if the last contour is not closed, we need to do a
@@ -1633,6 +1649,8 @@ void
 PathPrivate::
 clear_tesses(void)
 {
+  m_shader_filled_path_ready = false;
+  m_shader_filled_path.clear();
   m_tess_list.clear();
 }
 
@@ -1655,6 +1673,98 @@ start_contour_if_necessary(void)
       pt = m_contours.back()->point(m_contours.back()->number_points() - 1);
     }
   move_common(pt);
+}
+
+enum fastuidraw::return_code
+PathPrivate::
+ready_shader_filled_path_interpolator(fastuidraw::ShaderFilledPath::Builder *B,
+                                      const fastuidraw::PathContour::interpolator_base *intepolator)
+{
+  using namespace fastuidraw;
+
+  const PathContour::bezier *bez;
+  bez = dynamic_cast<const PathContour::bezier*>(intepolator);
+  if (!bez)
+    {
+      /* early out, interpolator not supported */
+      return routine_fail;
+    }
+
+  c_array<const vec2> pts(bez->pts());
+  switch (pts.size())
+    {
+    default:
+      return routine_fail;
+    case 2:
+      B->line_to(pts.back());
+      break;
+    case 3:
+      B->quadratic_to(pts[1], pts[2]);
+      break;
+    case 4:
+      B->cubic_to(pts[1], pts[2], pts[3]);
+      break;
+    }
+  return routine_success;
+}
+
+enum fastuidraw::return_code
+PathPrivate::
+ready_shader_filled_path_contour(fastuidraw::ShaderFilledPath::Builder *B,
+                                 const fastuidraw::PathContour *contour)
+{
+  using namespace fastuidraw;
+  if (!contour->closed() || contour->number_interpolators() == 0)
+    {
+      return routine_success;
+    }
+
+  B->move_to(contour->interpolator(0)->start_pt());
+  for (unsigned int I = 0, endI = contour->number_interpolators(); I < endI; ++I)
+    {
+      const PathContour::interpolator_base *interpolator;
+
+      interpolator = contour->interpolator(I).get();
+      if (interpolator->is_flat())
+        {
+          B->line_to(interpolator->end_pt());
+        }
+      else
+        {
+          enum return_code R;
+          R = ready_shader_filled_path_interpolator(B, interpolator);
+          if (R == routine_fail)
+            {
+              return R;
+            }
+        }
+    }
+
+  return routine_success;
+}
+
+void
+PathPrivate::
+ready_shader_filled_path(const fastuidraw::reference_counted_ptr<fastuidraw::GlyphAtlas> &glyph_atlas)
+{
+  using namespace fastuidraw;
+
+  if (m_shader_filled_path_ready)
+    {
+      return;
+    }
+  ShaderFilledPath::Builder B;
+
+  m_shader_filled_path_ready = true;
+  m_shader_filled_path.clear();
+  for (const auto &contour : m_contours)
+    {
+      if (routine_fail == ready_shader_filled_path_contour(&B, contour.get()))
+        {
+          return;
+        }
+    }
+  m_shader_filled_path = FASTUIDRAWnew ShaderFilledPath(B, glyph_atlas);
 }
 
 /////////////////////////////////////////
@@ -2070,4 +2180,15 @@ contour(unsigned int i) const
   PathPrivate *d;
   d = static_cast<PathPrivate*>(m_d);
   return d->m_contours[i];
+}
+
+const fastuidraw::reference_counted_ptr<const fastuidraw::ShaderFilledPath>&
+fastuidraw::Path::
+shader_filled_path(const reference_counted_ptr<GlyphAtlas> &glyph_atlas) const
+{
+  PathPrivate *d;
+  d = static_cast<PathPrivate*>(m_d);
+
+  d->ready_shader_filled_path(glyph_atlas);
+  return d->m_shader_filled_path;
 }
