@@ -99,32 +99,31 @@ public:
     void *m_d;
   };
 
-  ShaderFilledPath(const Builder &B,
-                   const reference_counted_ptr<GlyphAtlas> &glyph_cache);
+  explicit
+  ShaderFilledPath(const Builder &B);
 
   ~ShaderFilledPath();
 
   /*!
    * Returns the \ref PainterAttribute and \ref PainterIndex data
-   * to draw the filled path. The attribute data is packed as follows
-   * - PainterAttribute::m_attrib0 .xy -> position of point in local coordinate (float)
-   * - PainterAttribute::m_attrib0 .wh -> difference between min-point and max-point of vertex
-   * - PainterAttribute::m_attrib1 .xy -> normalized coordinate (uint)
-   * - PainterAttribute::m_attrib1 .z  -> number vertical bands (uint)
-   * - PainterAttribute::m_attrib1 .w  -> number horizontal bands (uint)
-   * - PainterAttribute::m_attrib2 .x  -> glyph data location together with bitmask
-   *                                      of fill rule.
+   * to draw the filled path. The attribute data is packed so that
+   * it is to be shaded by a \ref PainterGlyphShader.
+   * \param glyph_atlas \ref GlyphAtlas to place GPU data
    * \param fill_rule full rule with which to fill the path
+   * \param out_attribs location to which to write attributes
+   * \param out_indices location to which to write indices
    */
   void
-  render_data(enum PainterEnums::fill_rule_t fill_rule,
+  render_data(const reference_counted_ptr<GlyphAtlas> &glyph_atlas,
+              enum PainterEnums::fill_rule_t fill_rule,
               c_array<const PainterAttribute> *out_attribs,
               c_array<const PainterIndex> *out_indices) const;
 
   /*!
    * Returns the \ref glyph_type of the ShaderFilledPath.
-   * Any glyph shader that accepts the returned glyph_type
-   * can then also be used to draw the ShaderFilledPath.
+   * Any \ref PainterGlyphShader that accepts the returned
+   * \ref glyph_type can then also be used to draw the
+   * ShaderFilledPath.
    */
   enum glyph_type
   render_type(void) const;
