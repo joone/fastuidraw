@@ -177,6 +177,21 @@ public:
     interpolator_base*
     deep_copy(const reference_counted_ptr<const interpolator_base> &prev) const = 0;
 
+    /*!
+     * To be optionally implemented by a derived class to add this
+     * interpolator to a \ref ShaderFilledPath::Builder. A return
+     * code of \ref routine_file means that the interpolator cannot
+     * be realized in such a way to be added and a \ref Path that
+     * includes such an interpolator in a closed contour will
+     * be unable to realized a \ref ShaderFilledPath value and
+     * \ref Path::shader_filled_path() will return a null handle.
+     * Default implementation is to return routine_fail.
+     * \param builder object to which to add interpolator.
+     */
+    virtual
+    enum return_code
+    add_to_builder(ShaderFilledPath::Builder *builder) const;
+
   private:
     friend class PathContour;
     void *m_d;
@@ -217,6 +232,10 @@ public:
     virtual
     interpolator_base*
     deep_copy(const reference_counted_ptr<const interpolator_base> &prev) const;
+
+    virtual
+    enum return_code
+    add_to_builder(ShaderFilledPath::Builder *builder) const;
   };
 
   /*!
@@ -380,6 +399,10 @@ public:
     virtual
     unsigned int
     minimum_tessellation_recursion(void) const;
+
+    virtual
+    enum return_code
+    add_to_builder(ShaderFilledPath::Builder *builder) const;
 
   private:
     bezier(const bezier &q,

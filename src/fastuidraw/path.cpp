@@ -386,10 +386,6 @@ namespace
     ready_shader_filled_path_contour(fastuidraw::ShaderFilledPath::Builder *B,
                                      const fastuidraw::PathContour *contour);
 
-    enum fastuidraw::return_code
-    ready_shader_filled_path_interpolator(fastuidraw::ShaderFilledPath::Builder *B,
-                                          const fastuidraw::PathContour::interpolator_base *intepolator);
-
     std::vector<fastuidraw::reference_counted_ptr<fastuidraw::PathContour> > m_contours;
     enum fastuidraw::PathEnums::edge_type_t m_next_edge_type;
 
@@ -701,6 +697,13 @@ edge_type(void) const
   InterpolatorBasePrivate *d;
   d = static_cast<InterpolatorBasePrivate*>(m_d);
   return d->m_type;
+}
+
+enum fastuidraw::return_code
+fastuidraw::PathContour::interpolator_base::
+add_to_builder(ShaderFilledPath::Builder*) const
+{
+  return routine_fail;
 }
 
 //////////////////////////////////////////////
@@ -1016,6 +1019,27 @@ minimum_tessellation_recursion(void) const
   return 1 + uint32_log2(d->m_start_region->pts().size());
 }
 
+enum fastuidraw::return_code
+fastuidraw::PathContour::bezier::
+add_to_builder(ShaderFilledPath::Builder *B) const
+{
+  c_array<const vec2> p(pts());
+  switch (p.size())
+    {
+    case 2:
+      B->line_to(p[1]);
+      return routine_success;
+    case 3:
+      B->quadratic_to(p[1], p[2]);
+      return routine_success;
+    case 4:
+      B->cubic_to(p[1], p[2], p[3]);
+      return routine_success;
+    default:
+      return routine_fail;
+    }
+}
+
 //////////////////////////////////////
 // fastuidraw::PathContour::flat methods
 bool
@@ -1057,6 +1081,14 @@ approximate_bounding_box(Rect *out_bb) const
 
   out_bb->m_max_point.x() = fastuidraw::t_max(p0.x(), p1.x());
   out_bb->m_max_point.y() = fastuidraw::t_max(p0.y(), p1.y());
+}
+
+enum fastuidraw::return_code
+fastuidraw::PathContour::flat::
+add_to_builder(ShaderFilledPath::Builder *B) const
+{
+  B->line_to(end_pt());
+  return routine_success;
 }
 
 //////////////////////////////////////
@@ -1677,43 +1709,12 @@ start_contour_if_necessary(void)
 
 enum fastuidraw::return_code
 PathPrivate::
-ready_shader_filled_path_interpolator(fastuidraw::ShaderFilledPath::Builder *B,
-                                      const fastuidraw::PathContour::interpolator_base *intepolator)
-{
-  using namespace fastuidraw;
-
-  const PathContour::bezier *bez;
-  bez = dynamic_cast<const PathContour::bezier*>(intepolator);
-  if (!bez)
-    {
-      /* early out, interpolator not supported */
-      return routine_fail;
-    }
-
-  c_array<const vec2> pts(bez->pts());
-  switch (pts.size())
-    {
-    default:
-      return routine_fail;
-    case 2:
-      B->line_to(pts.back());
-      break;
-    case 3:
-      B->quadratic_to(pts[1], pts[2]);
-      break;
-    case 4:
-      B->cubic_to(pts[1], pts[2], pts[3]);
-      break;
-    }
-  return routine_success;
-}
-
-enum fastuidraw::return_code
-PathPrivate::
 ready_shader_filled_path_contour(fastuidraw::ShaderFilledPath::Builder *B,
                                  const fastuidraw::PathContour *contour)
 {
   using namespace fastuidraw;
+
+  /* skip empty and non-closed contours */
   if (!contour->closed() || contour->number_interpolators() == 0)
     {
       return routine_success;
@@ -1722,21 +1723,12 @@ ready_shader_filled_path_contour(fastuidraw::ShaderFilledPath::Builder *B,
   B->move_to(contour->interpolator(0)->start_pt());
   for (unsigned int I = 0, endI = contour->number_interpolators(); I < endI; ++I)
     {
-      const PathContour::interpolator_base *interpolator;
+      enum return_code R;
 
-      interpolator = contour->interpolator(I).get();
-      if (interpolator->is_flat())
+      R = contour->interpolator(I)->add_to_builder(B);
+      if (R == routine_fail)
         {
-          B->line_to(interpolator->end_pt());
-        }
-      else
-        {
-          enum return_code R;
-          R = ready_shader_filled_path_interpolator(B, interpolator);
-          if (R == routine_fail)
-            {
-              return R;
-            }
+          return R;
         }
     }
 
