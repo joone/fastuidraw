@@ -522,8 +522,11 @@ namespace
     ~GlyphRenderDataBandedRaysPrivate(void);
 
     template<typename Array>
+    static
     void
-    fill_glyph_attributes(Array &dst,
+    fill_glyph_attributes(Array &attributes,
+                          int num_vertical_bands,
+                          int num_horizontal_bands,
                           enum fastuidraw::PainterEnums::fill_rule_t f,
                           uint32_t data_offset);
 
@@ -532,6 +535,7 @@ namespace
     enum fastuidraw::PainterEnums::fill_rule_t m_fill_rule;
     std::vector<fastuidraw::generic_data> m_render_data;
     fastuidraw::vecN<float, num_costs> m_render_cost;
+    fastuidraw::GlyphRenderDataBandedRays::query_info m_info;
   };
 }
 
@@ -820,6 +824,8 @@ template<typename Array>
 void
 GlyphRenderDataBandedRaysPrivate::
 fill_glyph_attributes(Array &attributes,
+                      int num_vertical_bands,
+                      int num_horizontal_bands,
                       enum fastuidraw::PainterEnums::fill_rule_t f,
                       uint32_t data_offset)
 {
@@ -835,8 +841,8 @@ fill_glyph_attributes(Array &attributes,
       attributes[GlyphRenderDataBandedRays::glyph_normalized_x].m_data[c] = x;
       attributes[GlyphRenderDataBandedRays::glyph_normalized_y].m_data[c] = y;
     }
-  attributes[GlyphRenderDataBandedRays::glyph_num_vertical_bands].m_data = uvec4(m_num_bands[vertical_band]);
-  attributes[GlyphRenderDataBandedRays::glyph_num_horizontal_bands].m_data = uvec4(m_num_bands[horizontal_band]);
+  attributes[GlyphRenderDataBandedRays::glyph_num_vertical_bands].m_data = uvec4(num_vertical_bands);
+  attributes[GlyphRenderDataBandedRays::glyph_num_horizontal_bands].m_data = uvec4(num_horizontal_bands);
 
   /* the leading two bits encode the fill rule */
   FASTUIDRAWassert((data_offset & FASTUIDRAW_MASK(31u, 1)) == 0u);
@@ -960,7 +966,8 @@ finalize(enum PainterEnums::fill_rule_t f, const Rect &glyph_rect,
   d->m_glyph->transform_curves(glyph_rect);
 
   /* step 1: break into split-bands; The split is -ALWAYS-
-   *         in the middle.
+   *         in the middle. Also, record the render costs
+   *         comptue from the bands.
    */
   std::vector<Band<horizontal_band> > split_horiz_bands;
   std::vector<Band<vertical_band> > split_vert_bands;
@@ -1073,7 +1080,10 @@ upload_to_atlas(GlyphAtlasProxy &atlas_proxy,
     }
 
   attributes.resize(glyph_num_attributes);
-  d->fill_glyph_attributes(attributes, d->m_fill_rule, data_offset);
+  d->fill_glyph_attributes(attributes,
+                           d->m_num_bands[vertical_band],
+                           d->m_num_bands[horizontal_band],
+                           d->m_fill_rule, data_offset);
 
   for (unsigned int i = 0; i < num_costs; ++i)
     {
@@ -1085,9 +1095,7 @@ upload_to_atlas(GlyphAtlasProxy &atlas_proxy,
 
 enum fastuidraw::return_code
 fastuidraw::GlyphRenderDataBandedRays::
-query(c_array<const fastuidraw::generic_data> *gpu_data,
-      vecN<GlyphAttribute, glyph_num_attributes> *glyph_attributes,
-      enum PainterEnums::fill_rule_t f, uint32_t data_offset) const
+query(query_info *out_info) const
 {
   GlyphRenderDataBandedRaysPrivate *d;
   d = static_cast<GlyphRenderDataBandedRaysPrivate*>(m_d);
@@ -1097,9 +1105,21 @@ query(c_array<const fastuidraw::generic_data> *gpu_data,
     {
       return routine_fail;
     }
-
-  *gpu_data = make_c_array(d->m_render_data);
-  d->fill_glyph_attributes(*glyph_attributes, f, data_offset);
+  *out_info = d->m_info;
 
   return routine_success;
+}
+
+///////////////////////////////////////////////////////////
+// fastuidraw::GlyphRenderDataBandedRays::query_info methods
+void
+fastuidraw::GlyphRenderDataBandedRays::query_info::
+set_glyph_attributes(vecN<GlyphAttribute, glyph_num_attributes> *out_attribs,
+                     enum PainterEnums::fill_rule_t fill_rule,
+                     uint32_t offset)
+{
+  GlyphRenderDataBandedRaysPrivate::fill_glyph_attributes(*out_attribs,
+                                                          m_number_vertical_bands,
+                                                          m_number_horizontal_bands,
+                                                          fill_rule, offset);
 }

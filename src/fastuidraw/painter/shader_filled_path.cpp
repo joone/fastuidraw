@@ -42,6 +42,8 @@ namespace
   {
   public:
     fastuidraw::vecN<fastuidraw::PainterAttribute, 4> m_attribs;
+    fastuidraw::vecN<fastuidraw::PainterIndex, 6> m_indices;
+    fastuidraw::vecN<fastuidraw::GlyphAttribute, RenderData::glyph_num_attributes> m_glyph_attribs;
   };
 
   class ShaderFilledPathPrivate
@@ -52,13 +54,7 @@ namespace
     ~ShaderFilledPathPrivate();
 
     const PerFillRule&
-    attribute_data(enum fastuidraw::PainterEnums::fill_rule_t fill_rule);
-
-    const fastuidraw::vecN<fastuidraw::PainterIndex, 6>&
-    indices(void)
-    {
-      return m_indices;
-    }
+    per_fill_rule(enum fastuidraw::PainterEnums::fill_rule_t fill_rule);
 
   private:
     void
@@ -68,8 +64,7 @@ namespace
     fastuidraw::BoundingBox<float> m_bbox;
     fastuidraw::GlyphCache::AllocationHandle m_allocation;
     std::vector<fastuidraw::generic_data> m_gpu_data;
-    fastuidraw::vecN<fastuidraw::GlyphAttribute, RenderData::glyph_num_attributes> m_glyph_attribs;
-    fastuidraw::vecN<fastuidraw::PainterIndex, 6> m_indices;
+    RenderData::query_info m_query_data;
 
     fastuidraw::vecN<PerFillRule, fastuidraw::PainterEnums::fill_rule_data_count> m_per_fill_rule;
     unsigned int m_number_times_atlas_cleared;
@@ -86,24 +81,19 @@ ShaderFilledPathPrivate(BuilderPrivate &B,
   m_number_times_atlas_cleared(0)
 {
   using namespace fastuidraw;
-  c_array<const generic_data> gpu_data;
 
   /* the fill rule actually does not matter, since ShaderFilledPath
    * constructs its own attribute data.
    */
   B.m_data.finalize(PainterEnums::nonzero_fill_rule, B.m_bbox.as_rect());
-  B.m_data.query(&gpu_data, &m_glyph_attribs, PainterEnums::nonzero_fill_rule, 0);
+  B.m_data.query(&m_query_data);
 
-  for (unsigned int f = 0; f < m_per_fill_rule.size(); ++f)
-    {
-      Glyph::pack_raw(m_glyph_attribs,
-                      0, m_per_fill_rule[f].m_attribs,
-                      0, m_indices,
-                      m_bbox.min_point(), m_bbox.max_point());
-    }
-
-  m_gpu_data.resize(gpu_data.size());
-  std::copy(gpu_data.begin(), gpu_data.end(), m_gpu_data.begin());
+  /* Because B may go out of scope, we need to save the GPU data
+   * to our own private array.
+   */
+  m_gpu_data.resize(m_query_data.m_gpu_data.size());
+  std::copy(m_query_data.m_gpu_data.begin(), m_query_data.m_gpu_data.end(), m_gpu_data.begin());
+  m_query_data.m_gpu_data = make_c_array(m_gpu_data);
 }
 
 ShaderFilledPathPrivate::
@@ -117,13 +107,13 @@ ShaderFilledPathPrivate::
 
 const PerFillRule&
 ShaderFilledPathPrivate::
-attribute_data(enum fastuidraw::PainterEnums::fill_rule_t fill_rule)
+per_fill_rule(enum fastuidraw::PainterEnums::fill_rule_t fill_rule)
 {
   using namespace fastuidraw;
   if (!m_allocation.valid() || m_number_times_atlas_cleared != m_cache->number_times_atlas_cleared())
     {
-      m_allocation = m_cache->allocate_data(make_c_array(m_gpu_data));
       m_number_times_atlas_cleared = m_cache->number_times_atlas_cleared();
+      m_allocation = m_cache->allocate_data(make_c_array(m_gpu_data));
       update_attribute_data();
     }
   FASTUIDRAWassert(m_allocation.valid());
@@ -135,37 +125,17 @@ ShaderFilledPathPrivate::
 update_attribute_data(void)
 {
   using namespace fastuidraw;
-
-  PainterAttribute::pointer_to_field dst;
-  int dst_idx;
-
-  Glyph::glyph_attribute_dst_write(RenderData::glyph_offset, &dst, &dst_idx);
   for (unsigned int f = 0; f < m_per_fill_rule.size(); ++f)
     {
-      uint32_t data_offset;
-
-      data_offset = m_allocation.location();
-      FASTUIDRAWassert((data_offset & FASTUIDRAW_MASK(31u, 1)) == 0u);
-      FASTUIDRAWassert((data_offset & FASTUIDRAW_MASK(30u, 1)) == 0u);
-
-      if (f == PainterEnums::odd_even_fill_rule
-          || f == PainterEnums::complement_odd_even_fill_rule)
-        {
-          data_offset |= FASTUIDRAW_MASK(31u, 1);
-        }
-      if (f == PainterEnums::complement_odd_even_fill_rule
-          || f == PainterEnums::complement_nonzero_fill_rule)
-        {
-          data_offset |= FASTUIDRAW_MASK(30u, 1);
-        }
-
-      for (unsigned int c = 0; c < 4; ++c)
-        {
-          (m_per_fill_rule[f].m_attribs[c].*dst)[dst_idx] = data_offset;
-        }
+      m_query_data.set_glyph_attributes(&m_per_fill_rule[f].m_glyph_attribs,
+                                        static_cast<enum PainterEnums::fill_rule_t>(f),
+                                        m_allocation.location());
+      Glyph::pack_raw(m_per_fill_rule[f].m_glyph_attribs,
+                      0, m_per_fill_rule[f].m_attribs,
+                      0, m_per_fill_rule[f].m_indices,
+                      m_bbox.min_point(), m_bbox.max_point());
     }
 }
-
 
 /////////////////////////////////////////////////
 // fastuidraw::ShaderFilledPath::Builder methods
@@ -282,8 +252,9 @@ render_data(enum PainterEnums::fill_rule_t fill_rule,
   ShaderFilledPathPrivate *d;
   d = static_cast<ShaderFilledPathPrivate*>(m_d);
 
-  *out_attribs = d->attribute_data(fill_rule).m_attribs;
-  *out_indices = d->indices();
+  const PerFillRule &F(d->per_fill_rule(fill_rule));
+  *out_attribs = F.m_attribs;
+  *out_indices = F.m_indices;
 }
 
 enum fastuidraw::glyph_type
