@@ -535,7 +535,6 @@ namespace
     enum fastuidraw::PainterEnums::fill_rule_t m_fill_rule;
     std::vector<fastuidraw::generic_data> m_render_data;
     fastuidraw::vecN<float, num_costs> m_render_cost;
-    fastuidraw::GlyphRenderDataBandedRays::query_info m_info;
   };
 }
 
@@ -1105,7 +1104,9 @@ query(query_info *out_info) const
     {
       return routine_fail;
     }
-  *out_info = d->m_info;
+  out_info->m_number_vertical_bands = d->m_num_bands[vertical_band];
+  out_info->m_number_horizontal_bands = d->m_num_bands[horizontal_band];
+  out_info->m_gpu_data = make_c_array(d->m_render_data);
 
   return routine_success;
 }
