@@ -816,6 +816,7 @@ namespace
     ~GlyphRenderDataRestrictedRaysPrivate(void);
 
     template<typename Array>
+    static
     void
     fill_glyph_attributes(Array &dst,
                           enum fastuidraw::PainterEnums::fill_rule_t f,
@@ -2260,9 +2261,7 @@ render_info_labels(void) const
 
 enum fastuidraw::return_code
 fastuidraw::GlyphRenderDataRestrictedRays::
-query(c_array<const fastuidraw::generic_data> *gpu_data,
-      vecN<GlyphAttribute, glyph_num_attributes> *glyph_attributes,
-      enum PainterEnums::fill_rule_t f, uint32_t data_offset) const
+query(query_info *out_info) const
 {
   GlyphRenderDataRestrictedRaysPrivate *d;
   d = static_cast<GlyphRenderDataRestrictedRaysPrivate*>(m_d);
@@ -2273,8 +2272,19 @@ query(c_array<const fastuidraw::generic_data> *gpu_data,
       return routine_fail;
     }
 
-  *gpu_data = make_c_array(d->m_render_data);
-  d->fill_glyph_attributes(*glyph_attributes, f, data_offset);
+  out_info->m_gpu_data = make_c_array(d->m_render_data);
 
   return routine_success;
+}
+
+///////////////////////////////////////////////////////////
+// fastuidraw::GlyphRenderDataRestrictedRays::query_info methods
+void
+fastuidraw::GlyphRenderDataRestrictedRays::query_info::
+set_glyph_attributes(vecN<GlyphAttribute, glyph_num_attributes> *out_attribs,
+                     enum PainterEnums::fill_rule_t fill_rule,
+                     uint32_t offset)
+{
+  GlyphRenderDataRestrictedRaysPrivate::fill_glyph_attributes(*out_attribs,
+                                                              fill_rule, offset);
 }
